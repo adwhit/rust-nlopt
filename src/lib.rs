@@ -2,6 +2,78 @@
 
 pub enum NLoptOpt {}
 
+#[repr(C)]
+enum NLoptAlgorithm {
+    NLOPT_GN_DIRECT = 0,
+    NLOPT_GN_DIRECT_L,
+    NLOPT_GN_DIRECT_L_RAND,
+    NLOPT_GN_DIRECT_NOSCAL,
+    NLOPT_GN_DIRECT_L_NOSCAL,
+    NLOPT_GN_DIRECT_L_RAND_NOSCAL,
+
+    NLOPT_GN_ORIG_DIRECT,
+    NLOPT_GN_ORIG_DIRECT_L,
+
+    NLOPT_GD_STOGO,
+    NLOPT_GD_STOGO_RAND,
+
+    NLOPT_LD_LBFGS_NOCEDAL,
+
+    NLOPT_LD_LBFGS,
+
+    NLOPT_LN_PRAXIS,
+
+    NLOPT_LD_VAR1,
+    NLOPT_LD_VAR2,
+
+    NLOPT_LD_TNEWTON,
+    NLOPT_LD_TNEWTON_RESTART,
+    NLOPT_LD_TNEWTON_PRECOND,
+    NLOPT_LD_TNEWTON_PRECOND_RESTART,
+
+    NLOPT_GN_CRS2_LM,
+
+    NLOPT_GN_MLSL,
+    NLOPT_GD_MLSL,
+    NLOPT_GN_MLSL_LDS,
+    NLOPT_GD_MLSL_LDS,
+
+    NLOPT_LD_MMA,
+
+    NLOPT_LN_COBYLA,
+
+    NLOPT_LN_NEWUOA,
+    NLOPT_LN_NEWUOA_BOUND,
+
+    NLOPT_LN_NELDERMEAD,
+    NLOPT_LN_SBPLX,
+
+    NLOPT_LN_AUGLAG,
+    NLOPT_LD_AUGLAG,
+    NLOPT_LN_AUGLAG_EQ,
+    NLOPT_LD_AUGLAG_EQ,
+
+    NLOPT_LN_BOBYQA,
+
+    NLOPT_GN_ISRES,
+
+    /* new variants that require local_optimizer to be set,
+     *         not with older constants for backwards compatibility
+     *         */
+    NLOPT_AUGLAG,
+    NLOPT_AUGLAG_EQ,
+    NLOPT_G_MLSL,
+    NLOPT_G_MLSL_LDS,
+
+    NLOPT_LD_SLSQP,
+
+    NLOPT_LD_CCSAQ,
+
+    NLOPT_GN_ESCH,
+
+    NLOPT_NUM_ALGORITHMS /* not an algorithm, just the number of them */
+}
+
 extern crate libc;
 use std::slice;
 
@@ -12,44 +84,56 @@ extern "C" {
 			n_dims: u32) -> *mut NLoptOpt;
 	fn nlopt_destroy(opt: *mut NLoptOpt);
     fn nlopt_set_min_objective(opt: *mut NLoptOpt, nlopt_fdf: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut libc::c_void) -> f64, d:*mut libc::c_void);
+    fn nlopt_optimize(opt: *mut NLoptOpt, x_init:*mut f64, min_value: *mut f64) -> i32;
 }
 
 struct NLoptMinimizer<T> {
 	opt: *mut NLoptOpt,
-	n_dims: u32,
-	objective: fn(n_dims: u32,
+	n_dims: usize,
+	objective: fn(n_dims: usize,
 		      argument: &[f64],
-		      gradient: &mut [f64],
+		      gradient: Option<&mut [f64]>,
 		      user_data: T) -> f64,
 	user_data: T,
 }
 
 impl <T> NLoptMinimizer <T> where T: Clone {
-	pub fn new(algorithm: i32, n_dims: u32, obj: fn(n:u32,a:&[f64],g:&mut [f64],ud:T) -> f64, user_data: T) -> NLoptMinimizer<T> {
+	pub fn new(algorithm: NLoptAlgorithm, n_dims: usize, obj: fn(n:usize,a:&[f64],g:Option<&mut [f64]>,ud:T) -> f64, user_data: T) -> NLoptMinimizer<T> {
 		unsafe{
 			let mut min = NLoptMinimizer {
-				opt: nlopt_create(algorithm,n_dims),
+				opt: nlopt_create(algorithm as i32,n_dims as u32),
 				n_dims: n_dims,
 				objective: obj,
 				user_data: user_data,
 			};
-
-            extern "C" fn objective_raw_callback<Ti:Clone>(n:u32,x:*const f64,g:*mut f64,d:*mut libc::c_void) -> f64 {
-                let min : &mut NLoptMinimizer<Ti> = unsafe { &mut *(d as *mut NLoptMinimizer<Ti>) };
-                let argument = unsafe { slice::from_raw_parts(x,n as usize) };
-                let mut gradient = unsafe { slice::from_raw_parts_mut(g,n as usize) };
-                let ret : f64 = (min.objective)(n, argument, gradient, min.user_data.clone());
-                ret
-            }
-
+            //testing
+            let ob = min.objective;
+            let a = [1.0;10];
+            let ret = ob(n_dims,&a,None,min.user_data.clone());
+            println!("{}",ret);
+            //end
             let u_data:*mut libc::c_void = &mut min as *mut _ as *mut libc::c_void;
-            nlopt_set_min_objective(min.opt, objective_raw_callback::<T>, u_data);
+            nlopt_set_min_objective(min.opt, NLoptMinimizer::<T>::objective_raw_callback, u_data);
             min
 		}
 	}
 
-    pub fn minimize() -> i32 {
-        1
+    #[no_mangle]
+    extern "C" fn objective_raw_callback(n:u32,x:*const f64,g:*mut f64,d:*mut libc::c_void) -> f64 {
+        let min : &mut NLoptMinimizer<T> = unsafe { &mut *(d as *mut NLoptMinimizer<T>) };
+        let argument = unsafe { slice::from_raw_parts(x,n as usize) };
+        let gradient : Option<&mut [f64]> = unsafe { if g.is_null() { None } else { Some(slice::from_raw_parts_mut(g,n as usize)) } };
+        let ob = min.objective;
+        let ret : f64 = ob(n as usize, argument, gradient, min.user_data.clone());
+        ret
+    }
+
+    pub fn minimize(&self, x_init:&mut[f64]) -> (i32,f64) {
+        unsafe {
+            let mut min_value : f64 = 0.0;
+            let ret = nlopt_optimize(self.opt, x_init.as_mut_ptr(), &mut min_value); 
+            (ret,min_value)
+        }
     }
 }
 
@@ -65,21 +149,23 @@ impl <T> Drop for NLoptMinimizer<T> {
 mod tests {
 
 use NLoptMinimizer;
+use NLoptAlgorithm;
 #[test]
 	fn it_works() {
-		fn test_objective(_:u32, a:&[f64], g:&mut [f64], ud:i32) -> f64 {
-			for mut gi in g{
-                *gi = 0.0;
+		fn test_objective(n:usize, a:&[f64], g:Option<&mut [f64]>, _:i32) -> f64 {
+            match g {
+                Some(x) => for i in 0..n {
+                    x[i] = a[i]*2.0;
+                },
+                None => (),
             }
-            a.iter().map(|x| { x*x*(ud as f64) }).sum()
+            a.iter().map(|x| { x*x }).sum()
 		}
 
-		let opt = NLoptMinimizer::<i32>::new(2,1,test_objective,1);
-        let a = [1.0,2.0];
-        let mut g = [1000.0,1.0];
-        let ret = (opt.objective)(1,&a,&mut g,1);
-        println!("ret = {}",ret);
-        println!("g = {:?}", g);
-        println!("a = {:?}", a);
+		let opt = NLoptMinimizer::<i32>::new(NLoptAlgorithm::NLOPT_LN_NELDERMEAD,10,test_objective,1);
+        let mut a = [1.0;10];
+        let (ret,min) = opt.minimize(&mut a);
+        println!("ret = {}, min = {}",ret,min);
+        //println!("a = {:?}", a);
 	}
 }
