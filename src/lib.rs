@@ -5,98 +5,102 @@ pub enum NLoptOpt {}
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub enum NLoptAlgorithm {
-    NLOPT_GN_DIRECT = 0,
-    NLOPT_GN_DIRECT_L,
-    NLOPT_GN_DIRECT_L_RAND,
-    NLOPT_GN_DIRECT_NOSCAL,
-    NLOPT_GN_DIRECT_L_NOSCAL,
-    NLOPT_GN_DIRECT_L_RAND_NOSCAL,
+    GN_DIRECT = 0,
+    GN_DIRECT_L,
+    GN_DIRECT_L_RAND,
+    GN_DIRECT_NOSCAL,
+    GN_DIRECT_L_NOSCAL,
+    GN_DIRECT_L_RAND_NOSCAL,
 
-    NLOPT_GN_ORIG_DIRECT,
-    NLOPT_GN_ORIG_DIRECT_L,
+    GN_ORIG_DIRECT,
+    GN_ORIG_DIRECT_L,
 
-    NLOPT_GD_STOGO,
-    NLOPT_GD_STOGO_RAND,
+    GD_STOGO,
+    GD_STOGO_RAND,
 
-    NLOPT_LD_LBFGS_NOCEDAL,
+    LD_LBFGS_NOCEDAL,
 
-    NLOPT_LD_LBFGS,
+    LD_LBFGS,
 
-    NLOPT_LN_PRAXIS,
+    LN_PRAXIS,
 
-    NLOPT_LD_VAR1,
-    NLOPT_LD_VAR2,
+    LD_VAR1,
+    LD_VAR2,
 
-    NLOPT_LD_TNEWTON,
-    NLOPT_LD_TNEWTON_RESTART,
-    NLOPT_LD_TNEWTON_PRECOND,
-    NLOPT_LD_TNEWTON_PRECOND_RESTART,
+    LD_TNEWTON,
+    LD_TNEWTON_RESTART,
+    LD_TNEWTON_PRECOND,
+    LD_TNEWTON_PRECOND_RESTART,
 
-    NLOPT_GN_CRS2_LM,
+    GN_CRS2_LM,
 
-    NLOPT_GN_MLSL,
-    NLOPT_GD_MLSL,
-    NLOPT_GN_MLSL_LDS,
-    NLOPT_GD_MLSL_LDS,
+    GN_MLSL,
+    GD_MLSL,
+    GN_MLSL_LDS,
+    GD_MLSL_LDS,
 
-    NLOPT_LD_MMA,
+    LD_MMA,
 
-    NLOPT_LN_COBYLA,
+    LN_COBYLA,
 
-    NLOPT_LN_NEWUOA,
-    NLOPT_LN_NEWUOA_BOUND,
+    LN_NEWUOA,
+    LN_NEWUOA_BOUND,
 
-    NLOPT_LN_NELDERMEAD,
-    NLOPT_LN_SBPLX,
+    LN_NELDERMEAD,
+    LN_SBPLX,
 
-    NLOPT_LN_AUGLAG,
-    NLOPT_LD_AUGLAG,
-    NLOPT_LN_AUGLAG_EQ,
-    NLOPT_LD_AUGLAG_EQ,
+    LN_AUGLAG,
+    LD_AUGLAG,
+    LN_AUGLAG_EQ,
+    LD_AUGLAG_EQ,
 
-    NLOPT_LN_BOBYQA,
+    LN_BOBYQA,
 
-    NLOPT_GN_ISRES,
+    GN_ISRES,
 
     /* new variants that require local_optimizer to be set,
      *         not with older constants for backwards compatibility
      *         */
-    NLOPT_AUGLAG,
-    NLOPT_AUGLAG_EQ,
-    NLOPT_G_MLSL,
-    NLOPT_G_MLSL_LDS,
+    AUGLAG,
+    AUGLAG_EQ,
+    G_MLSL,
+    G_MLSL_LDS,
 
-    NLOPT_LD_SLSQP,
+    LD_SLSQP,
 
-    NLOPT_LD_CCSAQ,
+    LD_CCSAQ,
 
-    NLOPT_GN_ESCH,
+    GN_ESCH,
 
-    NLOPT_NUM_ALGORITHMS /* not an algorithm, just the number of them */
+    NUM_ALGORITHMS /* not an algorithm, just the number of them */
 }
 
 extern crate libc;
 use std::slice;
-use std::mem::transmute;
+use libc::*;
 
 #[link(name = "nlopt",
        vers = "0.1.0")]
 extern "C" {
-    fn nlopt_create(algorithm: i32,
-                    n_dims: u32) -> *mut NLoptOpt;
+    fn nlopt_create(algorithm: i32, n_dims: u32) -> *mut NLoptOpt;
     fn nlopt_destroy(opt: *mut NLoptOpt);
-    fn nlopt_set_min_objective(opt: *mut NLoptOpt, nlopt_fdf: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut libc::c_void) -> f64, d:*const libc::c_void);
+    fn nlopt_set_min_objective(opt: *mut NLoptOpt, nlopt_fdf: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d:*const c_void) -> i32;
     fn nlopt_optimize(opt: *mut NLoptOpt, x_init:*mut f64, min_value: *mut f64) -> i32;
+    fn nlopt_set_lower_bounds(opt: *mut NLoptOpt, lb: *const f64) -> i32;
+    fn nlopt_set_maxeval(opt: *mut NLoptOpt, maxeval: i32) -> i32;
 }
 
 pub struct NLoptMinimizer<T> {
     opt: *mut NLoptOpt,
     n_dims: usize,
     params: T,
-    function: fn(n_dims: usize,
-                 argument: &[f64],
-                 gradient: Option<&mut [f64]>,
-                 params: T) -> f64,
+    //function: fn(n_dims: usize,
+    //             argument: &[f64],
+    //             gradient: Option<&mut [f64]>,
+    //             params: T) -> f64,
+    //lower_bound: Option<Box<[f64]>>,
+    //upper_bound: Option<Box<[f64]>>,
+    maxeval: Option<u32>,
 }
 
 struct Function<T> {
@@ -115,21 +119,40 @@ impl <T> NLoptMinimizer<T> where T: Copy {
                 opt: nlopt_create(algorithm as i32,n_dims as u32),
                 n_dims: n_dims,
                 params: user_data,
-                function: obj,
+                //function: obj,
+                //lower_bound: None,
+                //upper_bound: None,
+                maxeval: None,
             };
-            let u_data:*const libc::c_void = transmute::<Box<Function<T>>,*const libc::c_void>(fb);
+            let u_data = Box::into_raw(fb) as *const c_void;
             nlopt_set_min_objective(min.opt, NLoptMinimizer::<T>::objective_raw_callback, u_data);
             min
         }
     }
 
+    pub fn set_lower_bound(&mut self, bound: Box<[f64]>) {
+        unsafe{
+            nlopt_set_lower_bounds(self.opt, (&*bound).as_ptr());
+        }
+        //self.lower_bound = Some(bound);
+    }
+
+    pub fn set_maxeval(&mut self, maxeval: u32) {
+        //self.maxeval = Some(maxeval);
+        unsafe{
+            let ret = nlopt_set_maxeval(self.opt, maxeval as i32);
+            if ret < 0 {
+                panic!("Could not set maximum evaluation");
+            }
+        }
+    }
+
     #[no_mangle]
-    extern "C" fn objective_raw_callback(n:u32,x:*const f64,g:*mut f64,d:*mut libc::c_void) -> f64 {
-        let f : Box<Function<T>> = unsafe { transmute(d) };
+    extern "C" fn objective_raw_callback(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64 {
+        let f : &Function<T> = unsafe { &*(d as *const Function<T>) };
         let argument = unsafe { slice::from_raw_parts(x,n as usize) };
         let gradient : Option<&mut [f64]> = unsafe { if g.is_null() { None } else { Some(slice::from_raw_parts_mut(g,n as usize)) } };
-        let ob = (*f).function;
-        let ret : f64 = ob(n as usize, argument, gradient, (*f).params);
+        let ret : f64 = ((*f).function)(n as usize, argument, gradient, (*f).params);
         ret
     }
 
@@ -160,20 +183,51 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let opt = NLoptMinimizer::<f64>::new(NLoptAlgorithm::NLOPT_LD_LBFGS,10,test_objective,20.5);
-        let mut a = [1.0;10];
+        println!("Initializing optimizer");
+        //initialize the optimizer, choose algorithm, dimensions, target function, user parameters
+        let mut opt = NLoptMinimizer::<f64>::new(NLoptAlgorithm::LD_MMA,1,test_objective,10.0);
+
+        println!("Setting bounds");
+        //set lower bounds for the search
+        let lb = Box::new([20.0;1]);
+        opt.set_lower_bound(lb);
+
+        opt.set_maxeval(402);
+
+        println!("Start optimization...");
+        //do the actual optimization
+        let mut a = [100.0;1];
         let (ret,min) = opt.minimize(&mut a);
-        println!("ret = {}, min = {}",ret,min);
+
+        //read the results
+        println!("ret = {} ({}), min = {}",ret,nlopt_result_to_string(ret),min);
         println!("a = {:?}", a);
     }
 
-    fn test_objective(n:usize, a:&[f64], g:Option<&mut [f64]>, param:f64) -> f64 {
+    fn test_objective(_:usize, a:&[f64], g:Option<&mut [f64]>, param:f64) -> f64 {
         match g {
-            Some(x) => for i in 0..n {
-                x[i] = (a[i]-param)*2.0;
+            Some(x) => for (target,value) in (*x).iter_mut().zip(a.iter().map(|f| { (f-param)*2.0 })) {
+                *target = value;
             },
-                None => (),
+            None => (),
         }
         a.iter().map(|x| { (x-param)*(x-param) }).sum()
+    }
+
+    fn nlopt_result_to_string(n: i32) -> String{
+        match n {
+           1 => String::from("NLOPT_SUCCESS"),
+           2 => String::from("NLOPT_STOPVAL_REACHED"),
+           3 => String::from("NLOPT_FTOL_REACHED"),
+           4 => String::from("NLOPT_XTOL_REACHED"),
+           5 => String::from("NLOPT_MAXEVAL_REACHED"),
+           6 => String::from("NLOPT_MAXTIME_REACHED"),
+           -1 => String::from("NLOPT_FAILURE"),
+           -2 => String::from("NLOPT_INVALID_ARGS"),
+           -3 => String::from("NLOPT_OUT_OF_MEMORY"),
+           -4 => String::from("NLOPT_ROUNDOFF_LIMITED"),
+           -5 => String::from("NLOPT_FORCED_STOP"),
+           _ => String::from("Unknown return value"),
+        }
     }
 }
