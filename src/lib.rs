@@ -156,22 +156,23 @@ impl <T> NLoptMinimizer<T> where T: Copy {
         ret
     }
 
-    pub fn minimize(&self, x_init:&mut[f64]) -> (i32,f64) {
+    pub fn minimize(&self, x_init:&mut[f64]) -> (Result<i32,i32>,f64) {
         unsafe {
             let mut min_value : f64 = 0.0;
             let ret = nlopt_optimize(self.opt, x_init.as_mut_ptr(), &mut min_value); 
-            (ret,min_value)
+            match ret < 0 {
+                true => (Err(ret),min_value),
+                false => (Ok(ret),min_value),
+            }
         }
     }
 }
 
 impl <T> Drop for NLoptMinimizer<T> {
     fn drop(&mut self) {
-        println!("I am being dropped");
         unsafe {
             nlopt_destroy(self.opt);
         }
-        println!("still good");
     }
 }
 
@@ -198,10 +199,10 @@ mod tests {
         //do the actual optimization
         let mut a = [100.0;10];
         let (ret,min) = opt.minimize(&mut a);
-
-        //read the results
-        println!("ret = {} ({}), min = {}",ret,nlopt_result_to_string(ret),min);
-        println!("a = {:?}", a);
+        match ret {
+            Ok(x) => println!("Optimization succeeded. ret = {} ({}), min = {} @ {:?}",x,nlopt_result_to_string(x),min,a),
+            Err(x) => println!("Optimization failed. ret = {} ({}), min = {} @ {:?}",x,nlopt_result_to_string(x),min,a),
+        }
     }
 
     fn test_objective(_:usize, a:&[f64], g:Option<&mut [f64]>, param:f64) -> f64 {
