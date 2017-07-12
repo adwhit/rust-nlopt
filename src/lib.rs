@@ -94,12 +94,12 @@ pub struct NLoptMinimizer<T> {
     opt: *mut NLoptOpt,
     n_dims: usize,
     params: T,
-    //function: fn(n_dims: usize,
-    //             argument: &[f64],
-    //             gradient: Option<&mut [f64]>,
-    //             params: T) -> f64,
-    //lower_bound: Option<Box<[f64]>>,
-    //upper_bound: Option<Box<[f64]>>,
+    function: fn(n_dims: usize,
+                 argument: &[f64],
+                 gradient: Option<&mut [f64]>,
+                 params: T) -> f64,
+    lower_bound: Option<Box<[f64]>>,
+    upper_bound: Option<Box<[f64]>>,
     maxeval: Option<u32>,
 }
 
@@ -119,9 +119,9 @@ impl <T> NLoptMinimizer<T> where T: Copy {
                 opt: nlopt_create(algorithm as i32,n_dims as u32),
                 n_dims: n_dims,
                 params: user_data,
-                //function: obj,
-                //lower_bound: None,
-                //upper_bound: None,
+                function: obj,
+                lower_bound: None,
+                upper_bound: None,
                 maxeval: None,
             };
             let u_data = Box::into_raw(fb) as *const c_void;
@@ -134,11 +134,11 @@ impl <T> NLoptMinimizer<T> where T: Copy {
         unsafe{
             nlopt_set_lower_bounds(self.opt, (&*bound).as_ptr());
         }
-        //self.lower_bound = Some(bound);
+        self.lower_bound = Some(bound);
     }
 
     pub fn set_maxeval(&mut self, maxeval: u32) {
-        //self.maxeval = Some(maxeval);
+        self.maxeval = Some(maxeval);
         unsafe{
             let ret = nlopt_set_maxeval(self.opt, maxeval as i32);
             if ret < 0 {
@@ -185,18 +185,18 @@ mod tests {
     fn it_works() {
         println!("Initializing optimizer");
         //initialize the optimizer, choose algorithm, dimensions, target function, user parameters
-        let mut opt = NLoptMinimizer::<f64>::new(NLoptAlgorithm::LD_LBFGS,1,test_objective,10.0);
+        let mut opt = NLoptMinimizer::<f64>::new(NLoptAlgorithm::LD_LBFGS,10,test_objective,10.0);
 
         println!("Setting bounds");
         //set lower bounds for the search
-        //let lb = Box::new([20.0;1]);
-        //opt.set_lower_bound(lb);
+        let lb = Box::new([-10.0;10]);
+        opt.set_lower_bound(lb);
 
         opt.set_maxeval(100);
 
         println!("Start optimization...");
         //do the actual optimization
-        let mut a = [100.0;1];
+        let mut a = [100.0;10];
         let (ret,min) = opt.minimize(&mut a);
 
         //read the results
