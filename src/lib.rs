@@ -87,6 +87,7 @@ extern "C" {
     fn nlopt_set_min_objective(opt: *mut NLoptOpt, nlopt_fdf: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d:*const c_void) -> i32;
     fn nlopt_optimize(opt: *mut NLoptOpt, x_init:*mut f64, min_value: *mut f64) -> i32;
     fn nlopt_set_lower_bounds(opt: *mut NLoptOpt, lb: *const f64) -> i32;
+    fn nlopt_set_upper_bounds(opt: *mut NLoptOpt, lb: *const f64) -> i32;
     fn nlopt_set_maxeval(opt: *mut NLoptOpt, maxeval: i32) -> i32;
 }
 
@@ -130,11 +131,28 @@ impl <T> NLoptMinimizer<T> where T: Copy {
         }
     }
 
-    pub fn set_lower_bound(&mut self, bound: Box<[f64]>) {
+    pub fn set_lower_bounds(&mut self, bound: Box<[f64]>) {
         unsafe{
-            nlopt_set_lower_bounds(self.opt, (&*bound).as_ptr());
+            nlopt_set_lower_bounds(self.opt, &*(bound).as_ptr());
         }
         self.lower_bound = Some(bound);
+    }
+
+    pub fn set_upper_bounds(&mut self, bound: Box<[f64]>) {
+        unsafe{
+            nlopt_set_upper_bounds(self.opt, &*(bound).as_ptr());
+        }
+        self.upper_bound = Some(bound);
+    }
+
+    pub fn set_lower_bound(&mut self, bound: f64){
+        let v = vec![bound;self.n_dims];
+        self.set_lower_bounds(v.into());
+    }
+
+    pub fn set_upper_bound(&mut self, bound: f64){
+        let v = vec![bound;self.n_dims];
+        self.set_upper_bounds(v.into());
     }
 
     pub fn set_maxeval(&mut self, maxeval: u32) {
@@ -190,18 +208,17 @@ mod tests {
 
         println!("Setting bounds");
         //set lower bounds for the search
-        let lb = Box::new([-10.0;10]);
-        opt.set_lower_bound(lb);
+        opt.set_lower_bound(-15.0);
 
         opt.set_maxeval(100);
 
         println!("Start optimization...");
         //do the actual optimization
-        let mut a = [100.0;10];
-        let (ret,min) = opt.minimize(&mut a);
+        let mut b : Vec<f64> = vec![100.0;10];
+        let (ret,min) = opt.minimize(&mut b);
         match ret {
-            Ok(x) => println!("Optimization succeeded. ret = {} ({}), min = {} @ {:?}",x,nlopt_result_to_string(x),min,a),
-            Err(x) => println!("Optimization failed. ret = {} ({}), min = {} @ {:?}",x,nlopt_result_to_string(x),min,a),
+            Ok(x) => println!("Optimization succeeded. ret = {} ({}), min = {} @ {:?}",x,nlopt_result_to_string(x),min,b),
+            Err(x) => println!("Optimization failed. ret = {} ({}), min = {} @ {:?}",x,nlopt_result_to_string(x),min,b),
         }
     }
 
