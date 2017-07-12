@@ -3,6 +3,7 @@
 pub enum NLoptOpt {}
 
 #[repr(C)]
+#[allow(non_camel_case_types)]
 pub enum NLoptAlgorithm {
     NLOPT_GN_DIRECT = 0,
     NLOPT_GN_DIRECT_L,
@@ -92,6 +93,10 @@ pub struct NLoptMinimizer<T> {
     opt: *mut NLoptOpt,
     n_dims: usize,
     params: T,
+    function: fn(n_dims: usize,
+                 argument: &[f64],
+                 gradient: Option<&mut [f64]>,
+                 params: T) -> f64,
 }
 
 struct Function<T> {
@@ -110,6 +115,7 @@ impl <T> NLoptMinimizer<T> where T: Copy {
                 opt: nlopt_create(algorithm as i32,n_dims as u32),
                 n_dims: n_dims,
                 params: user_data,
+                function: obj,
             };
             let u_data:*const libc::c_void = transmute::<Box<Function<T>>,*const libc::c_void>(fb);
             nlopt_set_min_objective(min.opt, NLoptMinimizer::<T>::objective_raw_callback, u_data);
@@ -134,23 +140,15 @@ impl <T> NLoptMinimizer<T> where T: Copy {
             (ret,min_value)
         }
     }
-
-    fn test_objective(n:usize, a:&[f64], g:Option<&mut [f64]>, _:T) -> f64 {
-        match g {
-            Some(x) => for i in 0..n {
-                x[i] = a[i]*2.0;
-            },
-                None => (),
-        }
-        a.iter().map(|x| { x*x }).sum()
-    }
 }
 
 impl <T> Drop for NLoptMinimizer<T> {
     fn drop(&mut self) {
+        println!("I am being dropped");
         unsafe {
             nlopt_destroy(self.opt);
         }
+        println!("still good");
     }
 }
 
@@ -162,20 +160,20 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let opt = NLoptMinimizer::<i32>::new(NLoptAlgorithm::NLOPT_LD_LBFGS,10,test_objective,1);
+        let opt = NLoptMinimizer::<f64>::new(NLoptAlgorithm::NLOPT_LD_LBFGS,10,test_objective,20.5);
         let mut a = [1.0;10];
         let (ret,min) = opt.minimize(&mut a);
         println!("ret = {}, min = {}",ret,min);
         println!("a = {:?}", a);
     }
 
-    pub fn test_objective(n:usize, a:&[f64], g:Option<&mut [f64]>, _:i32) -> f64 {
+    fn test_objective(n:usize, a:&[f64], g:Option<&mut [f64]>, param:f64) -> f64 {
         match g {
             Some(x) => for i in 0..n {
-                x[i] = a[i]*2.0;
+                x[i] = (a[i]-param)*2.0;
             },
                 None => (),
         }
-        a.iter().map(|x| { x*x }).sum()
+        a.iter().map(|x| { (x-param)*(x-param) }).sum()
     }
 }
