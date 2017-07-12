@@ -3,7 +3,7 @@
 pub enum NLoptOpt {}
 
 #[repr(C)]
-enum NLoptAlgorithm {
+pub enum NLoptAlgorithm {
     NLOPT_GN_DIRECT = 0,
     NLOPT_GN_DIRECT_L,
     NLOPT_GN_DIRECT_L_RAND,
@@ -83,24 +83,24 @@ extern "C" {
     fn nlopt_create(algorithm: i32,
                     n_dims: u32) -> *mut NLoptOpt;
     fn nlopt_destroy(opt: *mut NLoptOpt);
-    fn nlopt_set_min_objective(opt: *mut NLoptOpt, nlopt_fdf: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut libc::c_void) -> f64, d:*mut libc::c_void);
+    fn nlopt_set_min_objective(opt: *mut NLoptOpt, nlopt_fdf: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut libc::c_void) -> f64, d:*const libc::c_void);
     fn nlopt_optimize(opt: *mut NLoptOpt, x_init:*mut f64, min_value: *mut f64) -> i32;
 }
 
-struct NLoptMinimizer<T> {
+pub struct NLoptMinimizer<T> {
     opt: *mut NLoptOpt,
     n_dims: usize,
     objective: fn(n_dims: usize,
                   argument: &[f64],
                   gradient: Option<&mut [f64]>,
                   user_data: T) -> f64,
-                  user_data: T,
+    user_data: T,
 }
 
 impl <T> NLoptMinimizer <T> where T: Clone {
     pub fn new(algorithm: NLoptAlgorithm, n_dims: usize, obj: fn(n:usize,a:&[f64],g:Option<&mut [f64]>,ud:T) -> f64, user_data: T) -> NLoptMinimizer<T> {
         unsafe{
-            let mut min = NLoptMinimizer {
+            let min = NLoptMinimizer {
                 opt: nlopt_create(algorithm as i32,n_dims as u32),
                 n_dims: n_dims,
                 objective: obj,
@@ -112,7 +112,7 @@ impl <T> NLoptMinimizer <T> where T: Clone {
             let ret = ob(n_dims,&a,None,min.user_data.clone());
             println!("{}",ret);
             //end
-            let u_data:*mut libc::c_void = &mut min as *mut _ as *mut libc::c_void;
+            let u_data:*const libc::c_void = & min as *const _ as *const libc::c_void;
             nlopt_set_min_objective(min.opt, NLoptMinimizer::<T>::objective_raw_callback, u_data);
             min
         }
@@ -120,7 +120,7 @@ impl <T> NLoptMinimizer <T> where T: Clone {
 
     #[no_mangle]
     extern "C" fn objective_raw_callback(n:u32,x:*const f64,g:*mut f64,d:*mut libc::c_void) -> f64 {
-        let min : &mut NLoptMinimizer<T> = unsafe { &mut *(d as *mut NLoptMinimizer<T>) };
+        let min : & NLoptMinimizer<T> = unsafe { & *(d as *const NLoptMinimizer<T>) };
         let argument = unsafe { slice::from_raw_parts(x,n as usize) };
         let gradient : Option<&mut [f64]> = unsafe { if g.is_null() { None } else { Some(slice::from_raw_parts_mut(g,n as usize)) } };
         let ob = min.objective;
@@ -150,22 +150,23 @@ mod tests {
 
     use NLoptMinimizer;
     use NLoptAlgorithm;
-#[test]
-    fn it_works() {
-        fn test_objective(n:usize, a:&[f64], g:Option<&mut [f64]>, _:i32) -> f64 {
-            match g {
-                Some(x) => for i in 0..n {
-                    x[i] = a[i]*2.0;
-                },
-                    None => (),
-            }
-            a.iter().map(|x| { x*x }).sum()
-        }
 
-        let opt = NLoptMinimizer::<i32>::new(NLoptAlgorithm::NLOPT_LN_NELDERMEAD,10,test_objective,1);
+    #[test]
+    fn it_works() {
+        let opt = NLoptMinimizer::<i32>::new(NLoptAlgorithm::NLOPT_LD_LBFGS,10,test_objective,1);
         let mut a = [1.0;10];
         let (ret,min) = opt.minimize(&mut a);
         println!("ret = {}, min = {}",ret,min);
         //println!("a = {:?}", a);
+    }
+
+    pub fn test_objective(n:usize, a:&[f64], g:Option<&mut [f64]>, _:i32) -> f64 {
+        match g {
+            Some(x) => for i in 0..n {
+                x[i] = a[i]*2.0;
+            },
+                None => (),
+        }
+        a.iter().map(|x| { x*x }).sum()
     }
 }

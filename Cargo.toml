@@ -1,5 +1,5 @@
 [package]
-name = "rust-nlopt"
+name = "nlopt"
 version = "0.1.0"
 authors = ["Lucas L. Treffenstädt <lucas@treffenstaedt.de>"]
 
