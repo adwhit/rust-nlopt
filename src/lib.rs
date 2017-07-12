@@ -2,6 +2,11 @@
 
 pub enum NLoptOpt {}
 
+pub enum NLoptTarget {
+    MAXIMIZE,
+    MINIMIZE,
+}
+
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub enum NLoptAlgorithm {
@@ -85,13 +90,14 @@ extern "C" {
     fn nlopt_create(algorithm: i32, n_dims: u32) -> *mut NLoptOpt;
     fn nlopt_destroy(opt: *mut NLoptOpt);
     fn nlopt_set_min_objective(opt: *mut NLoptOpt, nlopt_fdf: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d:*const c_void) -> i32;
-    fn nlopt_optimize(opt: *mut NLoptOpt, x_init:*mut f64, min_value: *mut f64) -> i32;
+    fn nlopt_set_max_objective(opt: *mut NLoptOpt, nlopt_fdf: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d:*const c_void) -> i32;
+    fn nlopt_optimize(opt: *mut NLoptOpt, x_init:*mut f64, opt_value: *mut f64) -> i32;
     fn nlopt_set_lower_bounds(opt: *mut NLoptOpt, lb: *const f64) -> i32;
     fn nlopt_set_upper_bounds(opt: *mut NLoptOpt, lb: *const f64) -> i32;
     fn nlopt_set_maxeval(opt: *mut NLoptOpt, maxeval: i32) -> i32;
 }
 
-pub struct NLoptMinimizer<T> {
+pub struct NLoptOptimizer<T> {
     opt: *mut NLoptOpt,
     n_dims: usize,
     params: T,
@@ -112,11 +118,11 @@ struct Function<T> {
     params: T,
 }
 
-impl <T> NLoptMinimizer<T> where T: Copy {
-    pub fn new(algorithm: NLoptAlgorithm, n_dims: usize, obj: fn(n:usize,a:&[f64],g:Option<&mut [f64]>,ud:T) -> f64, user_data: T) -> NLoptMinimizer<T> {
+impl <T> NLoptOptimizer<T> where T: Copy {
+    pub fn new(algorithm: NLoptAlgorithm, n_dims: usize, obj: fn(n:usize,a:&[f64],g:Option<&mut [f64]>,ud:T) -> f64, target : NLoptTarget, user_data: T) -> NLoptOptimizer<T> {
         unsafe{
             let fb = Box::new(Function{ function: obj, params: user_data });
-            let min = NLoptMinimizer {
+            let opt = NLoptOptimizer {
                 opt: nlopt_create(algorithm as i32,n_dims as u32),
                 n_dims: n_dims,
                 params: user_data,
@@ -126,21 +132,27 @@ impl <T> NLoptMinimizer<T> where T: Copy {
                 maxeval: None,
             };
             let u_data = Box::into_raw(fb) as *const c_void;
-            nlopt_set_min_objective(min.opt, NLoptMinimizer::<T>::objective_raw_callback, u_data);
-            min
+            match target {
+                NLoptTarget::MINIMIZE => nlopt_set_min_objective(opt.opt, NLoptOptimizer::<T>::objective_raw_callback, u_data),
+                NLoptTarget::MAXIMIZE => nlopt_set_max_objective(opt.opt, NLoptOptimizer::<T>::objective_raw_callback, u_data),
+            };
+            opt
         }
     }
 
+    //Static Bounds
     pub fn set_lower_bounds(&mut self, bound: Box<[f64]>) {
         unsafe{
-            nlopt_set_lower_bounds(self.opt, &*(bound).as_ptr());
+            let ret = nlopt_set_lower_bounds(self.opt, &*(bound).as_ptr());
+            if ret < 0 { panic!("Could not set lower bounds"); }
         }
         self.lower_bound = Some(bound);
     }
 
     pub fn set_upper_bounds(&mut self, bound: Box<[f64]>) {
         unsafe{
-            nlopt_set_upper_bounds(self.opt, &*(bound).as_ptr());
+            let ret = nlopt_set_upper_bounds(self.opt, &*(bound).as_ptr());
+            if ret < 0 { panic!("Could not set upper bounds"); }
         }
         self.upper_bound = Some(bound);
     }
@@ -155,6 +167,23 @@ impl <T> NLoptMinimizer<T> where T: Copy {
         self.set_upper_bounds(v.into());
     }
 
+    pub fn get_upper_bounds(&self) -> Option<&[f64]>{
+        match self.upper_bound {
+            None => None,
+            Some(ref x) => Some(&*x),
+        }
+    }
+
+    pub fn get_lower_bounds(&self) -> Option<&[f64]>{
+        match self.lower_bound {
+            None => None,
+            Some(ref x) => Some(&*x),
+        }
+    }
+
+    //Nonlinear Constraints TODO
+
+    //Stopping Criteria TODO
     pub fn set_maxeval(&mut self, maxeval: u32) {
         self.maxeval = Some(maxeval);
         unsafe{
@@ -164,6 +193,16 @@ impl <T> NLoptMinimizer<T> where T: Copy {
             }
         }
     }
+
+
+    //Forced Termination TODO
+    //Local Optimization TODO
+    //Stochastic Population TODO
+    //Pseudorandom Numbers TODO
+    //Vector storage for limited-memory quasi-Newton algorithms TODO
+    //Preconditioning TODO
+    //Version Number TODO
+    //NLopt Refernce: http://ab-initio.mit.edu/wiki/index.php/NLopt_Reference
 
     #[no_mangle]
     extern "C" fn objective_raw_callback(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64 {
@@ -186,7 +225,7 @@ impl <T> NLoptMinimizer<T> where T: Copy {
     }
 }
 
-impl <T> Drop for NLoptMinimizer<T> {
+impl <T> Drop for NLoptOptimizer<T> {
     fn drop(&mut self) {
         unsafe {
             nlopt_destroy(self.opt);
@@ -196,15 +235,13 @@ impl <T> Drop for NLoptMinimizer<T> {
 
 #[cfg(test)]
 mod tests {
-
-    use NLoptMinimizer;
-    use NLoptAlgorithm;
+    use super::*;
 
     #[test]
     fn it_works() {
         println!("Initializing optimizer");
         //initialize the optimizer, choose algorithm, dimensions, target function, user parameters
-        let mut opt = NLoptMinimizer::<f64>::new(NLoptAlgorithm::LD_LBFGS,10,test_objective,10.0);
+        let mut opt = NLoptOptimizer::<f64>::new(NLoptAlgorithm::LD_LBFGS,10,test_objective,NLoptTarget::MINIMIZE,10.0);
 
         println!("Setting bounds");
         //set lower bounds for the search
@@ -214,7 +251,7 @@ mod tests {
 
         println!("Start optimization...");
         //do the actual optimization
-        let mut b : Vec<f64> = vec![100.0;10];
+        let mut b : Vec<f64> = vec![100.0;opt.n_dims];
         let (ret,min) = opt.minimize(&mut b);
         match ret {
             Ok(x) => println!("Optimization succeeded. ret = {} ({}), min = {} @ {:?}",x,nlopt_result_to_string(x),min,b),
