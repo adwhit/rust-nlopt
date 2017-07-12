@@ -185,14 +185,14 @@ mod tests {
     fn it_works() {
         println!("Initializing optimizer");
         //initialize the optimizer, choose algorithm, dimensions, target function, user parameters
-        let mut opt = NLoptMinimizer::<f64>::new(NLoptAlgorithm::LD_MMA,1,test_objective,10.0);
+        let mut opt = NLoptMinimizer::<f64>::new(NLoptAlgorithm::LD_LBFGS,1,test_objective,10.0);
 
         println!("Setting bounds");
         //set lower bounds for the search
-        let lb = Box::new([20.0;1]);
-        opt.set_lower_bound(lb);
+        //let lb = Box::new([20.0;1]);
+        //opt.set_lower_bound(lb);
 
-        opt.set_maxeval(402);
+        opt.set_maxeval(100);
 
         println!("Start optimization...");
         //do the actual optimization
