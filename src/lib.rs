@@ -88,10 +88,10 @@ extern "C" {
     fn nlopt_optimize(opt: *mut NLoptOpt, x_init:*mut f64, min_value: *mut f64) -> i32;
 }
 
-pub struct NLoptMinimizer<'a,T:'a> {
+pub struct NLoptMinimizer<T> {
     opt: *mut NLoptOpt,
     n_dims: usize,
-    //objective: &'a Box<Function<T>>,
+    params: T,
 }
 
 struct Function<T> {
@@ -102,16 +102,15 @@ struct Function<T> {
     params: T,
 }
 
-impl <'a,T> NLoptMinimizer <'a,T> where T: Copy {
-    pub fn new(algorithm: NLoptAlgorithm, n_dims: usize, obj: fn(n:usize,a:&[f64],g:Option<&mut [f64]>,ud:T) -> f64, user_data: T) -> NLoptMinimizer<'a,T> {
+impl <T> NLoptMinimizer<T> where T: Copy {
+    pub fn new(algorithm: NLoptAlgorithm, n_dims: usize, obj: fn(n:usize,a:&[f64],g:Option<&mut [f64]>,ud:T) -> f64, user_data: T) -> NLoptMinimizer<T> {
         unsafe{
             let fb = Box::new(Function{ function: obj, params: user_data });
             let min = NLoptMinimizer {
                 opt: nlopt_create(algorithm as i32,n_dims as u32),
                 n_dims: n_dims,
-                //objective: &fb,
+                params: user_data,
             };
-            println!("n = {}",min.n_dims);
             let u_data:*const libc::c_void = transmute::<Box<Function<T>>,*const libc::c_void>(fb);
             nlopt_set_min_objective(min.opt, NLoptMinimizer::<T>::objective_raw_callback, u_data);
             min
@@ -123,10 +122,8 @@ impl <'a,T> NLoptMinimizer <'a,T> where T: Copy {
         let f : Box<Function<T>> = unsafe { transmute(d) };
         let argument = unsafe { slice::from_raw_parts(x,n as usize) };
         let gradient : Option<&mut [f64]> = unsafe { if g.is_null() { None } else { Some(slice::from_raw_parts_mut(g,n as usize)) } };
-        println!("n = {}",n);
         let ob = (*f).function;
         let ret : f64 = ob(n as usize, argument, gradient, (*f).params);
-        //let ret : f64 = NLoptMinimizer::test_objective(n as usize, argument, gradient, min.user_data.clone());
         ret
     }
 
@@ -146,6 +143,14 @@ impl <'a,T> NLoptMinimizer <'a,T> where T: Copy {
                 None => (),
         }
         a.iter().map(|x| { x*x }).sum()
+    }
+}
+
+impl <T> Drop for NLoptMinimizer<T> {
+    fn drop(&mut self) {
+        unsafe {
+            nlopt_destroy(self.opt);
+        }
     }
 }
 
