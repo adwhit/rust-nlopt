@@ -103,16 +103,12 @@ pub struct NLoptOptimizer<T> {
     opt: *mut NLoptOpt,
     n_dims: usize,
     params: T,
-    function: fn(n_dims: usize,
-                 argument: &[f64],
-                 gradient: Option<&mut [f64]>,
-                 params: T) -> f64,
+    function: NLoptFn<T>,
 }
 
-type NLoptFn<T> = fn(n_dims: usize,
-                 argument: &[f64],
-                 gradient: Option<&mut [f64]>,
-                 params: T) -> f64;
+type NLoptFn<T> = fn(argument: &[f64],
+                     gradient: Option<&mut [f64]>,
+                     params: T) -> f64;
 
 struct Function<T> {
     function: NLoptFn<T>,
@@ -129,12 +125,10 @@ struct Constraint<F> {
     ctype: ConstraintType,
 }
 
-type NLoptMFn<T> = fn(res_dims: usize,
-                 result: &mut [f64],
-                 n_dims: usize,
-                 argument: &[f64],
-                 gradient: Option<&mut [f64]>,
-                 params: T) -> f64;
+type NLoptMFn<T> = fn(result: &mut [f64],
+                      argument: &[f64],
+                      gradient: Option<&mut [f64]>,
+                      params: T) -> f64;
 
 struct MFunction<T> {
     function: NLoptMFn<T>,
@@ -153,19 +147,18 @@ impl <T> NLoptOptimizer<T> where T: Copy {
             };
             let u_data = Box::into_raw(fb) as *const c_void;
             match target {
-                NLoptTarget::MINIMIZE => nlopt_set_min_objective(opt.opt, NLoptOptimizer::<T>::objective_raw_callback, u_data),
-                NLoptTarget::MAXIMIZE => nlopt_set_max_objective(opt.opt, NLoptOptimizer::<T>::objective_raw_callback, u_data),
+                NLoptTarget::MINIMIZE => nlopt_set_min_objective(opt.opt, NLoptOptimizer::<T>::function_raw_callback, u_data),
+                NLoptTarget::MAXIMIZE => nlopt_set_max_objective(opt.opt, NLoptOptimizer::<T>::function_raw_callback, u_data),
             };
             opt
         }
     }
 
     //Static Bounds
-    pub fn set_lower_bounds(&mut self, bound: Vec<f64>) -> Result<i32,i32> {
+    pub fn set_lower_bounds(&mut self, bound: &[f64]) -> Result<i32,i32> {
         let ret;
-        let bb : Box<[f64]> = bound.into();
         unsafe{
-            ret = nlopt_set_lower_bounds(self.opt, &*(bb).as_ptr());
+            ret = nlopt_set_lower_bounds(self.opt, bound.as_ptr());
         }
         match ret {
             x if x < 0 => Err(x),
@@ -173,11 +166,10 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
-    pub fn set_upper_bounds(&mut self, bound: Vec<f64>) -> Result<i32,i32> {
+    pub fn set_upper_bounds(&mut self, bound: &[f64]) -> Result<i32,i32> {
         let ret;
-        let bb : Box<[f64]> = bound.into();
         unsafe{
-            ret = nlopt_set_upper_bounds(self.opt, &*(bb).as_ptr());
+            ret = nlopt_set_upper_bounds(self.opt, bound.as_ptr());
         }
         match ret {
             x if x < 0 => Err(x),
@@ -187,34 +179,34 @@ impl <T> NLoptOptimizer<T> where T: Copy {
 
     pub fn set_lower_bound(&mut self, bound: f64) -> Result<i32,i32>{
         let v = vec![bound;self.n_dims];
-        self.set_lower_bounds(v.into())
+        self.set_lower_bounds(&v)
     }
 
     pub fn set_upper_bound(&mut self, bound: f64) -> Result<i32,i32>{
         let v = vec![bound;self.n_dims];
-        self.set_upper_bounds(v.into())
+        self.set_upper_bounds(&v)
     }
 
-    pub fn get_upper_bounds(&self) -> Option<Vec<f64>>{
+    pub fn get_upper_bounds(&self) -> Option<&[f64]>{
         let bound : Box<[f64]> = vec![0.0;self.n_dims].into();
         unsafe {
             let b = Box::into_raw(bound);
             let ret = nlopt_get_upper_bounds(self.opt, b as *mut f64);
             match ret {
                 x if x < 0 => None,
-                _ => Some(Vec::from_raw_parts(b as *mut f64,self.n_dims,self.n_dims))
+                _ => Some(slice::from_raw_parts(b as *mut f64,self.n_dims))
             }
         }
     }
 
-    pub fn get_lower_bounds(&self) -> Option<Vec<f64>>{
+    pub fn get_lower_bounds(&self) -> Option<&[f64]>{
         let bound : Box<[f64]> = vec![0.0;self.n_dims].into();
         unsafe {
             let b = Box::into_raw(bound);
             let ret = nlopt_get_lower_bounds(self.opt, b as *mut f64);
             match ret {
                 x if x < 0 => None,
-                _ => Some(Vec::from_raw_parts(b as *mut f64,self.n_dims,self.n_dims))
+                _ => Some(slice::from_raw_parts(b as *mut f64,self.n_dims))
             }
         }
     }
@@ -247,11 +239,20 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     //NLopt Refernce: http://ab-initio.mit.edu/wiki/index.php/NLopt_Reference
 
     #[no_mangle]
-    extern "C" fn objective_raw_callback(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64 {
+    extern "C" fn function_raw_callback(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64 {
         let f : &Function<T> = unsafe { &*(d as *const Function<T>) };
         let argument = unsafe { slice::from_raw_parts(x,n as usize) };
         let gradient : Option<&mut [f64]> = unsafe { if g.is_null() { None } else { Some(slice::from_raw_parts_mut(g,n as usize)) } };
-        let ret : f64 = ((*f).function)(n as usize, argument, gradient, (*f).params);
+        let ret : f64 = ((*f).function)(argument, gradient, (*f).params);
+        ret
+    }
+
+    #[no_mangle]
+    extern "C" fn mfunction_raw_callback(m:u32, re:*mut f64, n:u32, x:*const f64, g:*mut f64, d:*mut c_void) -> f64 {
+        let f : &MFunction<T> = unsafe { &*(d as *const MFunction<T>) };
+        let argument = unsafe { slice::from_raw_parts(x,n as usize) };
+        let gradient : Option<&mut [f64]> = unsafe { if g.is_null() { None } else { Some(slice::from_raw_parts_mut(g,n as usize)) } };
+        let ret : f64 = unsafe { ((*f).function)(slice::from_raw_parts_mut(re,m as usize), argument, gradient, (*f).params) };
         ret
     }
 
@@ -312,7 +313,7 @@ mod tests {
         }
     }
 
-    fn test_objective(_:usize, a:&[f64], g:Option<&mut [f64]>, param:f64) -> f64 {
+    fn test_objective(a:&[f64], g:Option<&mut [f64]>, param:f64) -> f64 {
         match g {
             Some(x) => for (target,value) in (*x).iter_mut().zip(a.iter().map(|f| { (f-param)*2.0 })) {
                 *target = value;
