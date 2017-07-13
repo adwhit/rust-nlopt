@@ -94,8 +94,14 @@ extern "C" {
     fn nlopt_optimize(opt: *mut NLoptOpt, x_init:*mut f64, opt_value: *mut f64) -> i32;
     fn nlopt_set_lower_bounds(opt: *mut NLoptOpt, lb: *const f64) -> i32;
     fn nlopt_set_upper_bounds(opt: *mut NLoptOpt, ub: *const f64) -> i32;
-    fn nlopt_get_lower_bounds(opt: *mut NLoptOpt, lb: *mut f64) -> i32;
-    fn nlopt_get_upper_bounds(opt: *mut NLoptOpt, ub: *mut f64) -> i32;
+    fn nlopt_get_lower_bounds(opt: *const NLoptOpt, lb: *mut f64) -> i32;
+    fn nlopt_get_upper_bounds(opt: *const NLoptOpt, ub: *mut f64) -> i32;
+    fn nlopt_add_inequality_constraint(opt: *mut NLoptOpt, fc: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d: *const c_void, tol: f64) -> i32;
+    fn nlopt_add_equality_constraint(opt: *mut NLoptOpt, fc: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d: *const c_void, tol: f64) -> i32;
+    fn nlopt_add_inequality_mconstraint(opt: *mut NLoptOpt, m:u32, fc: extern "C" fn(m:u32, r:*mut f64, n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d: *const c_void, tol:*const f64) -> i32;
+    fn nlopt_add_equality_mconstraint(opt: *mut NLoptOpt, m:u32, fc: extern "C" fn(m:u32, r:*mut f64, n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d: *const c_void, tol:*const f64) -> i32;
+    fn nlopt_remove_inequality_constraints(opt: *mut NLoptOpt) -> i32;
+    fn nlopt_remove_equality_constraints(opt: *mut NLoptOpt) -> i32;
     fn nlopt_set_maxeval(opt: *mut NLoptOpt, maxeval: i32) -> i32;
 }
 
@@ -106,11 +112,11 @@ pub struct NLoptOptimizer<T> {
     function: NLoptFn<T>,
 }
 
-type NLoptFn<T> = fn(argument: &[f64],
+pub type NLoptFn<T> = fn(argument: &[f64],
                      gradient: Option<&mut [f64]>,
                      params: T) -> f64;
 
-struct Function<T> {
+pub struct Function<T> {
     function: NLoptFn<T>,
     params: T,
 }
@@ -125,12 +131,13 @@ struct Constraint<F> {
     ctype: ConstraintType,
 }
 
-type NLoptMFn<T> = fn(result: &mut [f64],
+pub type NLoptMFn<T> = fn(result: &mut [f64],
                       argument: &[f64],
                       gradient: Option<&mut [f64]>,
                       params: T) -> f64;
 
-struct MFunction<T> {
+pub struct MFunction<T> {
+    m: usize,
     function: NLoptMFn<T>,
     params: T,
 }
@@ -211,7 +218,51 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
-    //Nonlinear Constraints TODO
+    //Nonlinear Constraints
+    //UNTESTED
+    pub fn add_inequality_constraint(&mut self, constraint: Box<Function<T>>, t: ConstraintType, tolerance: f64) -> Result<i32,i32> {
+        match t {
+            ConstraintType::INEQUALITY => unsafe { 
+                NLoptOptimizer::<T>::nlopt_res_to_result(
+                    nlopt_add_inequality_constraint(self.opt, NLoptOptimizer::<T>::function_raw_callback, Box::into_raw(constraint) as *const c_void, tolerance)
+                    ) 
+            },
+            ConstraintType::EQUALITY => unsafe { 
+                NLoptOptimizer::<T>::nlopt_res_to_result(
+                    nlopt_add_equality_constraint(self.opt, NLoptOptimizer::<T>::function_raw_callback, Box::into_raw(constraint) as *const c_void, tolerance)
+                    ) 
+            },
+        }
+    }
+    
+    //UNTESTED
+    pub fn add_inequality_mconstraint(&mut self, constraint: Box<MFunction<T>>, t: ConstraintType, tolerance: &[f64]) -> Result<i32,i32> {
+        let m: u32 = (*constraint).m as u32;
+        match t {
+            ConstraintType::INEQUALITY => unsafe { 
+                NLoptOptimizer::<T>::nlopt_res_to_result(
+                    nlopt_add_inequality_mconstraint(self.opt, m, NLoptOptimizer::<T>::mfunction_raw_callback, Box::into_raw(constraint) as *const c_void, tolerance.as_ptr())
+                    ) 
+            },
+            ConstraintType::EQUALITY => unsafe { 
+                NLoptOptimizer::<T>::nlopt_res_to_result(
+                    nlopt_add_equality_mconstraint(self.opt, m, NLoptOptimizer::<T>::mfunction_raw_callback, Box::into_raw(constraint) as *const c_void, tolerance.as_ptr())
+                    ) 
+            },
+        }
+    }
+    
+    //UNTESTED
+    pub fn remove_constraints(&mut self) -> Result<i32,i32>{
+        unsafe {
+            NLoptOptimizer::<T>::nlopt_res_to_result(
+                std::cmp::min(
+                    nlopt_remove_inequality_constraints(self.opt),
+                    nlopt_remove_equality_constraints(self.opt)
+                )
+            )
+        }
+    }
 
     //Stopping Criteria TODO
     pub fn set_maxeval(&mut self, maxeval: u32) -> Result<i32,i32> {
@@ -251,7 +302,7 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     extern "C" fn mfunction_raw_callback(m:u32, re:*mut f64, n:u32, x:*const f64, g:*mut f64, d:*mut c_void) -> f64 {
         let f : &MFunction<T> = unsafe { &*(d as *const MFunction<T>) };
         let argument = unsafe { slice::from_raw_parts(x,n as usize) };
-        let gradient : Option<&mut [f64]> = unsafe { if g.is_null() { None } else { Some(slice::from_raw_parts_mut(g,n as usize)) } };
+        let gradient : Option<&mut [f64]> = unsafe { if g.is_null() { None } else { Some(slice::from_raw_parts_mut(g,(n as usize)*(m as usize))) } };
         let ret : f64 = unsafe { ((*f).function)(slice::from_raw_parts_mut(re,m as usize), argument, gradient, (*f).params) };
         ret
     }
