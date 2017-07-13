@@ -141,30 +141,36 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     //Static Bounds
-    pub fn set_lower_bounds(&mut self, bound: Box<[f64]>) {
+    pub fn set_lower_bounds(&mut self, bound: Box<[f64]>) -> Result<i32,i32> {
+        let ret;
         unsafe{
-            let ret = nlopt_set_lower_bounds(self.opt, &*(bound).as_ptr());
-            if ret < 0 { panic!("Could not set lower bounds"); }
+            ret = nlopt_set_lower_bounds(self.opt, &*(bound).as_ptr());
         }
-        self.lower_bound = Some(bound);
+        match ret {
+            x if x < 0 => Err(x),
+            x => { self.lower_bound = Some(bound); Ok(x) },
+        }
     }
 
-    pub fn set_upper_bounds(&mut self, bound: Box<[f64]>) {
+    pub fn set_upper_bounds(&mut self, bound: Box<[f64]>) -> Result<i32,i32> {
+        let ret;
         unsafe{
-            let ret = nlopt_set_upper_bounds(self.opt, &*(bound).as_ptr());
-            if ret < 0 { panic!("Could not set upper bounds"); }
+            ret = nlopt_set_upper_bounds(self.opt, &*(bound).as_ptr());
         }
-        self.upper_bound = Some(bound);
+        match ret {
+            x if x < 0 => Err(x),
+            x => { self.upper_bound = Some(bound); Ok(x) },
+        }
     }
 
-    pub fn set_lower_bound(&mut self, bound: f64){
+    pub fn set_lower_bound(&mut self, bound: f64) -> Result<i32,i32>{
         let v = vec![bound;self.n_dims];
-        self.set_lower_bounds(v.into());
+        self.set_lower_bounds(v.into())
     }
 
-    pub fn set_upper_bound(&mut self, bound: f64){
+    pub fn set_upper_bound(&mut self, bound: f64) -> Result<i32,i32>{
         let v = vec![bound;self.n_dims];
-        self.set_upper_bounds(v.into());
+        self.set_upper_bounds(v.into())
     }
 
     pub fn get_upper_bounds(&self) -> Option<&[f64]>{
@@ -245,7 +251,10 @@ mod tests {
 
         println!("Setting bounds");
         //set lower bounds for the search
-        opt.set_lower_bound(-15.0);
+        match opt.set_lower_bound(-15.0) {
+            Err(_) => panic!("Could not set lower bounds"),
+            _ => (),
+        };
 
         opt.set_maxeval(100);
 
