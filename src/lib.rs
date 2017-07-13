@@ -93,7 +93,9 @@ extern "C" {
     fn nlopt_set_max_objective(opt: *mut NLoptOpt, nlopt_fdf: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d:*const c_void) -> i32;
     fn nlopt_optimize(opt: *mut NLoptOpt, x_init:*mut f64, opt_value: *mut f64) -> i32;
     fn nlopt_set_lower_bounds(opt: *mut NLoptOpt, lb: *const f64) -> i32;
-    fn nlopt_set_upper_bounds(opt: *mut NLoptOpt, lb: *const f64) -> i32;
+    fn nlopt_set_upper_bounds(opt: *mut NLoptOpt, ub: *const f64) -> i32;
+    fn nlopt_get_lower_bounds(opt: *mut NLoptOpt, lb: *mut f64) -> i32;
+    fn nlopt_get_upper_bounds(opt: *mut NLoptOpt, ub: *mut f64) -> i32;
     fn nlopt_set_maxeval(opt: *mut NLoptOpt, maxeval: i32) -> i32;
 }
 
@@ -105,21 +107,42 @@ pub struct NLoptOptimizer<T> {
                  argument: &[f64],
                  gradient: Option<&mut [f64]>,
                  params: T) -> f64,
-    lower_bound: Option<Box<[f64]>>,
-    upper_bound: Option<Box<[f64]>>,
-    maxeval: Option<u32>,
 }
 
-struct Function<T> {
-    function: fn(n_dims: usize,
+type NLoptFn<T> = fn(n_dims: usize,
                  argument: &[f64],
                  gradient: Option<&mut [f64]>,
-                 params: T) -> f64,
+                 params: T) -> f64;
+
+struct Function<T> {
+    function: NLoptFn<T>,
+    params: T,
+}
+
+pub enum ConstraintType {
+    EQUALITY,
+    INEQUALITY,
+}
+
+struct Constraint<F> {
+    function: F,
+    ctype: ConstraintType,
+}
+
+type NLoptMFn<T> = fn(res_dims: usize,
+                 result: &mut [f64],
+                 n_dims: usize,
+                 argument: &[f64],
+                 gradient: Option<&mut [f64]>,
+                 params: T) -> f64;
+
+struct MFunction<T> {
+    function: NLoptMFn<T>,
     params: T,
 }
 
 impl <T> NLoptOptimizer<T> where T: Copy {
-    pub fn new(algorithm: NLoptAlgorithm, n_dims: usize, obj: fn(n:usize,a:&[f64],g:Option<&mut [f64]>,ud:T) -> f64, target : NLoptTarget, user_data: T) -> NLoptOptimizer<T> {
+    pub fn new(algorithm: NLoptAlgorithm, n_dims: usize, obj: NLoptFn<T>, target : NLoptTarget, user_data: T) -> NLoptOptimizer<T> {
         unsafe{
             let fb = Box::new(Function{ function: obj, params: user_data });
             let opt = NLoptOptimizer {
@@ -127,9 +150,6 @@ impl <T> NLoptOptimizer<T> where T: Copy {
                 n_dims: n_dims,
                 params: user_data,
                 function: obj,
-                lower_bound: None,
-                upper_bound: None,
-                maxeval: None,
             };
             let u_data = Box::into_raw(fb) as *const c_void;
             match target {
@@ -141,25 +161,27 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     //Static Bounds
-    pub fn set_lower_bounds(&mut self, bound: Box<[f64]>) -> Result<i32,i32> {
+    pub fn set_lower_bounds(&mut self, bound: Vec<f64>) -> Result<i32,i32> {
         let ret;
+        let bb : Box<[f64]> = bound.into();
         unsafe{
-            ret = nlopt_set_lower_bounds(self.opt, &*(bound).as_ptr());
+            ret = nlopt_set_lower_bounds(self.opt, &*(bb).as_ptr());
         }
         match ret {
             x if x < 0 => Err(x),
-            x => { self.lower_bound = Some(bound); Ok(x) },
+            x => Ok(x),
         }
     }
 
-    pub fn set_upper_bounds(&mut self, bound: Box<[f64]>) -> Result<i32,i32> {
+    pub fn set_upper_bounds(&mut self, bound: Vec<f64>) -> Result<i32,i32> {
         let ret;
+        let bb : Box<[f64]> = bound.into();
         unsafe{
-            ret = nlopt_set_upper_bounds(self.opt, &*(bound).as_ptr());
+            ret = nlopt_set_upper_bounds(self.opt, &*(bb).as_ptr());
         }
         match ret {
             x if x < 0 => Err(x),
-            x => { self.upper_bound = Some(bound); Ok(x) },
+            x => Ok(x),
         }
     }
 
@@ -173,30 +195,44 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         self.set_upper_bounds(v.into())
     }
 
-    pub fn get_upper_bounds(&self) -> Option<&[f64]>{
-        match self.upper_bound {
-            None => None,
-            Some(ref x) => Some(&*x),
+    pub fn get_upper_bounds(&self) -> Option<Vec<f64>>{
+        let bound : Box<[f64]> = vec![0.0;self.n_dims].into();
+        unsafe {
+            let b = Box::into_raw(bound);
+            let ret = nlopt_get_upper_bounds(self.opt, b as *mut f64);
+            match ret {
+                x if x < 0 => None,
+                _ => Some(Vec::from_raw_parts(b as *mut f64,self.n_dims,self.n_dims))
+            }
         }
     }
 
-    pub fn get_lower_bounds(&self) -> Option<&[f64]>{
-        match self.lower_bound {
-            None => None,
-            Some(ref x) => Some(&*x),
+    pub fn get_lower_bounds(&self) -> Option<Vec<f64>>{
+        let bound : Box<[f64]> = vec![0.0;self.n_dims].into();
+        unsafe {
+            let b = Box::into_raw(bound);
+            let ret = nlopt_get_lower_bounds(self.opt, b as *mut f64);
+            match ret {
+                x if x < 0 => None,
+                _ => Some(Vec::from_raw_parts(b as *mut f64,self.n_dims,self.n_dims))
+            }
         }
     }
 
     //Nonlinear Constraints TODO
 
     //Stopping Criteria TODO
-    pub fn set_maxeval(&mut self, maxeval: u32) {
-        self.maxeval = Some(maxeval);
+    pub fn set_maxeval(&mut self, maxeval: u32) -> Result<i32,i32> {
         unsafe{
             let ret = nlopt_set_maxeval(self.opt, maxeval as i32);
-            if ret < 0 {
-                panic!("Could not set maximum evaluation");
-            }
+            NLoptOptimizer::<T>::nlopt_res_to_result(ret)
+        }
+    }
+
+    fn nlopt_res_to_result(ret: i32) -> Result<i32,i32> {
+        match ret {
+            x if x < 0 => Err(x),
+            x => Ok(x),
         }
     }
 
@@ -256,7 +292,15 @@ mod tests {
             _ => (),
         };
 
-        opt.set_maxeval(100);
+        match opt.get_lower_bounds() {
+            None => panic!("Could not read lower bounds"),
+            Some(x) => println!("Bounds set to {:?}",x),
+        };
+
+        match opt.set_maxeval(100) {
+            Err(_) => panic!("Could not set maximum evaluations"),
+            _ => (),
+        };
 
         println!("Start optimization...");
         //do the actual optimization
