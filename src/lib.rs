@@ -220,7 +220,7 @@ impl <T> NLoptOptimizer<T> where T: Copy {
 
     //Nonlinear Constraints
     //UNTESTED
-    pub fn add_inequality_constraint(&mut self, constraint: Box<Function<T>>, t: ConstraintType, tolerance: f64) -> Result<i32,i32> {
+    pub fn add_constraint(&mut self, constraint: Box<Function<T>>, t: ConstraintType, tolerance: f64) -> Result<i32,i32> {
         match t {
             ConstraintType::INEQUALITY => unsafe { 
                 NLoptOptimizer::<T>::nlopt_res_to_result(
@@ -236,7 +236,7 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
     
     //UNTESTED
-    pub fn add_inequality_mconstraint(&mut self, constraint: Box<MFunction<T>>, t: ConstraintType, tolerance: &[f64]) -> Result<i32,i32> {
+    pub fn add_mconstraint(&mut self, constraint: Box<MFunction<T>>, t: ConstraintType, tolerance: &[f64]) -> Result<i32,i32> {
         let m: u32 = (*constraint).m as u32;
         match t {
             ConstraintType::INEQUALITY => unsafe { 
@@ -335,7 +335,7 @@ mod tests {
     fn it_works() {
         println!("Initializing optimizer");
         //initialize the optimizer, choose algorithm, dimensions, target function, user parameters
-        let mut opt = NLoptOptimizer::<f64>::new(NLoptAlgorithm::LD_LBFGS,10,test_objective,NLoptTarget::MINIMIZE,10.0);
+        let mut opt = NLoptOptimizer::<f64>::new(NLoptAlgorithm::LD_MMA,10,test_objective,NLoptTarget::MINIMIZE,10.0);
 
         println!("Setting bounds");
         //set lower bounds for the search
@@ -344,9 +344,15 @@ mod tests {
             _ => (),
         };
 
+        println!("Adding inequality constraint");
+        match opt.add_constraint(Box::new(Function::<f64>{ function: test_inequality_constraint, params: 120.0, }), ConstraintType::INEQUALITY, 1e-6) {
+            Err(x) => panic!("Could not add inequality constraint (Err {})",x),
+            _ => (),
+        };
+
         match opt.get_lower_bounds() {
             None => panic!("Could not read lower bounds"),
-            Some(x) => println!("Bounds set to {:?}",x),
+            Some(x) => println!("Lower bounds set to {:?}",x),
         };
 
         match opt.set_maxeval(100) {
@@ -372,6 +378,10 @@ mod tests {
             None => (),
         }
         a.iter().map(|x| { (x-param)*(x-param) }).sum()
+    }
+
+    fn test_inequality_constraint(a:&[f64], _:Option<&mut [f64]>, param:f64) -> f64 {
+        param-a[5]
     }
 
     fn nlopt_result_to_string(n: i32) -> String{
