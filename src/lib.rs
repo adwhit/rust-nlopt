@@ -64,8 +64,8 @@ pub enum NLoptAlgorithm {
     GN_ISRES,
 
     /* new variants that require local_optimizer to be set,
-     *         not with older constants for backwards compatibility
-     *         */
+     * not with older constants for backwards compatibility
+     **/
     AUGLAG,
     AUGLAG_EQ,
     G_MLSL,
