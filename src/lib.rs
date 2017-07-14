@@ -195,9 +195,9 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     pub fn get_upper_bounds(&self) -> Option<&[f64]>{
-        let bound : Box<[f64]> = vec![0.0;self.n_dims].into();
+        let mut bound : Vec<f64> = vec![0.0 as f64;self.n_dims];
         unsafe {
-            let b = Box::into_raw(bound);
+            let b = bound.as_mut_ptr();
             let ret = nlopt_get_upper_bounds(self.opt, b as *mut f64);
             match ret {
                 x if x < 0 => None,
@@ -207,9 +207,9 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     pub fn get_lower_bounds(&self) -> Option<&[f64]>{
-        let bound : Box<[f64]> = vec![0.0;self.n_dims].into();
+        let mut bound : Vec<f64> = vec![0.0 as f64;self.n_dims];
         unsafe {
-            let b = Box::into_raw(bound);
+            let b = bound.as_mut_ptr();
             let ret = nlopt_get_lower_bounds(self.opt, b as *mut f64);
             match ret {
                 x if x < 0 => None,
