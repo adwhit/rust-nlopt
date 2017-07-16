@@ -120,6 +120,8 @@ extern "C" {
     fn nlopt_get_maxeval(opt: *mut NLoptOpt) -> i32;
     fn nlopt_set_maxtime(opt: *mut NLoptOpt, maxtime: f64) -> i32;
     fn nlopt_get_maxtime(opt: *mut NLoptOpt) -> f64;
+    fn nlopt_force_stop(opt: *mut NLoptOpt) -> i32;
+    fn nlopt_set_force_stop(opt: *mut NLoptOpt, val: i32) -> i32;
 }
 
 pub struct NLoptOptimizer<T> {
@@ -404,8 +406,19 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
-
-    //Forced Termination TODO
+    //Forced Termination
+    pub fn force_stop(&mut self, stopval: Option<i32>) -> StrResult {
+        unsafe {
+            match stopval {
+                Some(x) => NLoptOptimizer::<T>::nlopt_res_to_result(
+                    nlopt_set_force_stop(self.opt, x)
+                    ),
+                None => NLoptOptimizer::<T>::nlopt_res_to_result(
+                    nlopt_force_stop(self.opt)
+                    ),
+            }
+        }
+    }
     //Local Optimization TODO
     //Stochastic Population TODO
     //Pseudorandom Numbers TODO
