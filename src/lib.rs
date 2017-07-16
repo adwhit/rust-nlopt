@@ -525,7 +525,10 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
-    //Preconditioning TODO
+    //Preconditioning TODO --> this is somewhat complex but not overly so. Just did not get around
+    //to it yet.
+
+
     //Version Number
     pub fn version() -> (i32,i32,i32) {
         unsafe {
