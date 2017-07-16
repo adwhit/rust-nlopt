@@ -128,6 +128,8 @@ extern "C" {
     fn nlopt_get_population(opt: *mut NLoptOpt) -> u32;
     fn nlopt_set_initial_step(opt: *mut NLoptOpt, dx: *const f64) -> i32;
     fn nlopt_get_initial_step(opt: *mut NLoptOpt, x: *const f64, dx: *mut f64) -> i32;
+    fn nlopt_srand(seed: c_ulong);
+    fn nlopt_srand_time();
 }
 
 pub struct NLoptOptimizer<T> {
@@ -494,7 +496,16 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
-    //Pseudorandom Numbers TODO
+    //Pseudorandom Numbers
+    pub fn srand_seed(seed: Option<u64>){
+        unsafe{
+            match seed {
+                None => nlopt_srand_time(),
+                Some(x) => nlopt_srand(x as c_ulong),
+            }
+        }
+    }
+
     //Vector storage for limited-memory quasi-Newton algorithms TODO
     //Preconditioning TODO
     //Version Number TODO
