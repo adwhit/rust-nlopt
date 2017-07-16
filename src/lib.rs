@@ -107,29 +107,31 @@ extern "C" {
     fn nlopt_remove_inequality_constraints(opt: *mut NLoptOpt) -> i32;
     fn nlopt_remove_equality_constraints(opt: *mut NLoptOpt) -> i32;
     fn nlopt_set_stopval(opt: *mut NLoptOpt, stopval:f64) -> i32;
-    fn nlopt_get_stopval(opt: *mut NLoptOpt) -> f64;
+    fn nlopt_get_stopval(opt: *const NLoptOpt) -> f64;
     fn nlopt_set_ftol_rel(opt: *mut NLoptOpt, tol: f64) -> i32;
-    fn nlopt_get_ftol_rel(opt: *mut NLoptOpt) -> f64;
+    fn nlopt_get_ftol_rel(opt: *const NLoptOpt) -> f64;
     fn nlopt_set_ftol_abs(opt: *mut NLoptOpt, tol: f64) -> i32;
-    fn nlopt_get_ftol_abs(opt: *mut NLoptOpt) -> f64;
+    fn nlopt_get_ftol_abs(opt: *const NLoptOpt) -> f64;
     fn nlopt_set_xtol_rel(opt: *mut NLoptOpt, tol: f64) -> i32;
-    fn nlopt_get_xtol_rel(opt: *mut NLoptOpt) -> f64;
+    fn nlopt_get_xtol_rel(opt: *const NLoptOpt) -> f64;
     fn nlopt_set_xtol_abs(opt: *mut NLoptOpt, tol: *const f64) -> i32;
-    fn nlopt_get_xtol_abs(opt: *mut NLoptOpt, tol: *mut f64) -> i32;
+    fn nlopt_get_xtol_abs(opt: *const NLoptOpt, tol: *mut f64) -> i32;
     fn nlopt_set_maxeval(opt: *mut NLoptOpt, maxeval: i32) -> i32;
-    fn nlopt_get_maxeval(opt: *mut NLoptOpt) -> i32;
+    fn nlopt_get_maxeval(opt: *const NLoptOpt) -> i32;
     fn nlopt_set_maxtime(opt: *mut NLoptOpt, maxtime: f64) -> i32;
-    fn nlopt_get_maxtime(opt: *mut NLoptOpt) -> f64;
+    fn nlopt_get_maxtime(opt: *const NLoptOpt) -> f64;
     fn nlopt_force_stop(opt: *mut NLoptOpt) -> i32;
     fn nlopt_set_force_stop(opt: *mut NLoptOpt, val: i32) -> i32;
-    fn nlopt_get_force_stop(opt: *mut NLoptOpt) -> i32;
+    fn nlopt_get_force_stop(opt: *const NLoptOpt) -> i32;
     fn nlopt_set_local_optimizer(opt: *mut NLoptOpt, local_opt: *mut NLoptOpt) -> i32;
     fn nlopt_set_population(opt: *mut NLoptOpt, pop: u32) -> i32;
-    fn nlopt_get_population(opt: *mut NLoptOpt) -> u32;
+    fn nlopt_get_population(opt: *const NLoptOpt) -> u32;
     fn nlopt_set_initial_step(opt: *mut NLoptOpt, dx: *const f64) -> i32;
-    fn nlopt_get_initial_step(opt: *mut NLoptOpt, x: *const f64, dx: *mut f64) -> i32;
+    fn nlopt_get_initial_step(opt: *const NLoptOpt, x: *const f64, dx: *mut f64) -> i32;
     fn nlopt_srand(seed: c_ulong);
     fn nlopt_srand_time();
+    fn nlopt_set_vector_storage(opt: *mut NLoptOpt, m: u32) -> i32;
+    fn nlopt_get_vector_storage(opt: *const NLoptOpt) -> u32;
 }
 
 pub struct NLoptOptimizer<T> {
@@ -506,7 +508,22 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
-    //Vector storage for limited-memory quasi-Newton algorithms TODO
+    //Vector storage for limited-memory quasi-Newton algorithms
+    pub fn set_vector_storage(&mut self, m: Option<usize>) -> StrResult {
+        unsafe {
+            match m {
+                None => NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_vector_storage(self.opt, 0 as u32)),
+                Some(x) => NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_vector_storage(self.opt, x as u32)),
+            }
+        }
+    }
+
+    pub fn get_vector_storage(&mut self) -> usize {
+        unsafe {
+            nlopt_get_vector_storage(self.opt) as usize
+        }
+    }
+
     //Preconditioning TODO
     //Version Number TODO
     //NLopt Refernce: http://ab-initio.mit.edu/wiki/index.php/NLopt_Reference
