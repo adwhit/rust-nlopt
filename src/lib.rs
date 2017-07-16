@@ -132,6 +132,7 @@ extern "C" {
     fn nlopt_srand_time();
     fn nlopt_set_vector_storage(opt: *mut NLoptOpt, m: u32) -> i32;
     fn nlopt_get_vector_storage(opt: *const NLoptOpt) -> u32;
+    fn nlopt_version(major: *mut i32, minor: *mut i32, bugfix: *mut i32);
 }
 
 pub struct NLoptOptimizer<T> {
@@ -525,7 +526,17 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     //Preconditioning TODO
-    //Version Number TODO
+    //Version Number
+    pub fn version() -> (i32,i32,i32) {
+        unsafe {
+            let mut i: i32 = 0;
+            let mut j: i32 = 0;
+            let mut k: i32 = 0;
+            nlopt_version(&mut i, &mut j, &mut k);
+            (i,j,k)
+        }
+    }
+
     //NLopt Refernce: http://ab-initio.mit.edu/wiki/index.php/NLopt_Reference
 
     //helpers
