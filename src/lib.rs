@@ -640,6 +640,9 @@ mod tests {
             _ => (),
         };
 
+        let (x,y,z) = NLoptOptimizer::<f64>::version();
+        println!("Using nlopt version {}.{}.{}",x,y,z);
+
         println!("Start optimization...");
         //do the actual optimization
         let mut b : Vec<f64> = vec![100.0;opt.n_dims];
