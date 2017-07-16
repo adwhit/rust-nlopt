@@ -123,6 +123,9 @@ extern "C" {
     fn nlopt_force_stop(opt: *mut NLoptOpt) -> i32;
     fn nlopt_set_force_stop(opt: *mut NLoptOpt, val: i32) -> i32;
     fn nlopt_get_force_stop(opt: *mut NLoptOpt) -> i32;
+    fn nlopt_set_local_optimizer(opt: *mut NLoptOpt, local_opt: *mut NLoptOpt) -> i32;
+    fn nlopt_set_population(opt: *mut NLoptOpt, pop: u32) -> i32;
+    fn nlopt_get_population(opt: *mut NLoptOpt) -> u32;
 }
 
 pub struct NLoptOptimizer<T> {
@@ -444,8 +447,28 @@ impl <T> NLoptOptimizer<T> where T: Copy {
             }
         }
     }
-    //Local Optimization TODO
-    //Stochastic Population TODO
+ 
+    //Local Optimization
+    pub fn set_local_optimizer(&mut self, local_opt: NLoptOptimizer<T>) -> StrResult{
+        unsafe {
+            NLoptOptimizer::<T>::nlopt_res_to_result( nlopt_set_local_optimizer(self.opt, local_opt.opt) )
+        }
+    }
+    
+    //Initial Step Size TODO
+    //Stochastic Population
+    pub fn set_population(&mut self, population: usize) -> StrResult {
+        unsafe {
+            NLoptOptimizer::<T>::nlopt_res_to_result( nlopt_set_population(self.opt, population as u32) )
+        }
+    }
+
+    pub fn get_population(&mut self) -> usize {
+        unsafe {
+            nlopt_get_population(self.opt) as usize
+        }
+    }
+
     //Pseudorandom Numbers TODO
     //Vector storage for limited-memory quasi-Newton algorithms TODO
     //Preconditioning TODO
