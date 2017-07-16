@@ -380,7 +380,13 @@ mod tests {
         a.iter().map(|x| { (x-param)*(x-param) }).sum()
     }
 
-    fn test_inequality_constraint(a:&[f64], _:Option<&mut [f64]>, param:f64) -> f64 {
+    fn test_inequality_constraint(a:&[f64], g:Option<&mut [f64]>, param:f64) -> f64 {
+        match g {
+            Some(x) => {    for (index, mut value) in x.iter_mut().enumerate() {
+                                *value = match index { 5 => -1.0, _ => 0.0 };
+                            }},
+            None => (),
+        };
         param-a[5]
     }
 
