@@ -126,6 +126,8 @@ extern "C" {
     fn nlopt_set_local_optimizer(opt: *mut NLoptOpt, local_opt: *mut NLoptOpt) -> i32;
     fn nlopt_set_population(opt: *mut NLoptOpt, pop: u32) -> i32;
     fn nlopt_get_population(opt: *mut NLoptOpt) -> u32;
+    fn nlopt_set_initial_step(opt: *mut NLoptOpt, dx: *const f64) -> i32;
+    fn nlopt_get_initial_step(opt: *mut NLoptOpt, x: *const f64, dx: *mut f64) -> i32;
 }
 
 pub struct NLoptOptimizer<T> {
@@ -455,7 +457,30 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
     
-    //Initial Step Size TODO
+    //Initial Step Size
+    pub fn set_initial_step(&mut self, dx: &[f64]) -> StrResult{
+        unsafe {
+            NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_initial_step(self.opt, dx.as_ptr()))
+        }
+    }
+
+    pub fn set_initial_step1(&mut self, dx: f64) -> StrResult{
+        let d : &[f64] = &vec![dx;self.n_dims];
+        self.set_initial_step(d)
+    }
+    
+    pub fn get_initial_step(&mut self, x: &[f64]) -> Option<&[f64]> {
+        let mut dx : Vec<f64> = vec![0.0 as f64;self.n_dims];
+        unsafe {
+            let b = dx.as_mut_ptr();
+            let ret = nlopt_get_initial_step(self.opt, x.as_ptr(), b as *mut f64);
+            match ret {
+                x if x < 0 => None,
+                _ => Some(slice::from_raw_parts(b as *mut f64,self.n_dims))
+            }
+        }
+    }
+
     //Stochastic Population
     pub fn set_population(&mut self, population: usize) -> StrResult {
         unsafe {
