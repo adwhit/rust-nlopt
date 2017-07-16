@@ -1,5 +1,9 @@
 #![allow(dead_code)]
 
+//! # Rust-NLopt
+//! 
+//! This is a wrapper for the NLopt library (http://ab-initio.mit.edu/wiki/index.php/NLopt).
+
 pub enum NLoptOpt {}
 
 pub enum NLoptTarget {
@@ -102,7 +106,20 @@ extern "C" {
     fn nlopt_add_equality_mconstraint(opt: *mut NLoptOpt, m:u32, fc: extern "C" fn(m:u32, r:*mut f64, n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d: *const c_void, tol:*const f64) -> i32;
     fn nlopt_remove_inequality_constraints(opt: *mut NLoptOpt) -> i32;
     fn nlopt_remove_equality_constraints(opt: *mut NLoptOpt) -> i32;
+    fn nlopt_set_stopval(opt: *mut NLoptOpt, stopval:f64) -> i32;
+    fn nlopt_get_stopval(opt: *mut NLoptOpt) -> f64;
+    fn nlopt_set_ftol_rel(opt: *mut NLoptOpt, tol: f64) -> i32;
+    fn nlopt_get_ftol_rel(opt: *mut NLoptOpt) -> f64;
+    fn nlopt_set_ftol_abs(opt: *mut NLoptOpt, tol: f64) -> i32;
+    fn nlopt_get_ftol_abs(opt: *mut NLoptOpt) -> f64;
+    fn nlopt_set_xtol_rel(opt: *mut NLoptOpt, tol: f64) -> i32;
+    fn nlopt_get_xtol_rel(opt: *mut NLoptOpt) -> f64;
+    fn nlopt_set_xtol_abs(opt: *mut NLoptOpt, tol: *const f64) -> i32;
+    fn nlopt_get_xtol_abs(opt: *mut NLoptOpt, tol: *mut f64) -> i32;
     fn nlopt_set_maxeval(opt: *mut NLoptOpt, maxeval: i32) -> i32;
+    fn nlopt_get_maxeval(opt: *mut NLoptOpt) -> i32;
+    fn nlopt_set_maxtime(opt: *mut NLoptOpt, maxtime: f64) -> i32;
+    fn nlopt_get_maxtime(opt: *mut NLoptOpt) -> f64;
 }
 
 pub struct NLoptOptimizer<T> {
@@ -115,6 +132,8 @@ pub struct NLoptOptimizer<T> {
 pub type NLoptFn<T> = fn(argument: &[f64],
                      gradient: Option<&mut [f64]>,
                      params: T) -> f64;
+
+type StrResult = Result<&'static str,&'static str>;
 
 pub struct Function<T> {
     function: NLoptFn<T>,
@@ -219,8 +238,7 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     //Nonlinear Constraints
-    //UNTESTED
-    pub fn add_constraint(&mut self, constraint: Box<Function<T>>, t: ConstraintType, tolerance: f64) -> Result<i32,i32> {
+    pub fn add_constraint(&mut self, constraint: Box<Function<T>>, t: ConstraintType, tolerance: f64) -> StrResult {
         match t {
             ConstraintType::INEQUALITY => unsafe { 
                 NLoptOptimizer::<T>::nlopt_res_to_result(
@@ -236,7 +254,7 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
     
     //UNTESTED
-    pub fn add_mconstraint(&mut self, constraint: Box<MFunction<T>>, t: ConstraintType, tolerance: &[f64]) -> Result<i32,i32> {
+    pub fn add_mconstraint(&mut self, constraint: Box<MFunction<T>>, t: ConstraintType, tolerance: &[f64]) -> StrResult {
         let m: u32 = (*constraint).m as u32;
         match t {
             ConstraintType::INEQUALITY => unsafe { 
@@ -253,7 +271,7 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
     
     //UNTESTED
-    pub fn remove_constraints(&mut self) -> Result<i32,i32>{
+    pub fn remove_constraints(&mut self) -> StrResult{
         unsafe {
             NLoptOptimizer::<T>::nlopt_res_to_result(
                 std::cmp::min(
@@ -264,18 +282,125 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
-    //Stopping Criteria TODO
-    pub fn set_maxeval(&mut self, maxeval: u32) -> Result<i32,i32> {
+    //Stopping Criteria
+    pub fn set_stopval(&mut self, stopval: f64) -> StrResult {
+        unsafe {
+            NLoptOptimizer::<T>::nlopt_res_to_result(
+                nlopt_set_stopval(self.opt, stopval)
+                )
+        }
+    }
+    
+    pub fn get_stopval(& self) -> f64 {
+        unsafe{
+            nlopt_get_stopval(self.opt)
+        }
+    }
+
+    pub fn set_ftol_rel(&mut self, tolerance: f64) -> StrResult {
+        unsafe {
+            NLoptOptimizer::<T>::nlopt_res_to_result(
+                nlopt_set_ftol_rel(self.opt, tolerance)
+                )
+        }
+    }
+    
+    pub fn get_ftol_rel(& self) -> Option<f64> {
+        unsafe{
+            match nlopt_get_ftol_rel(self.opt) {
+                x if x < 0.0 => None,
+                x => Some(x),
+            }
+        }
+    }
+
+    pub fn set_ftol_abs(&mut self, tolerance: f64) -> StrResult {
+        unsafe {
+            NLoptOptimizer::<T>::nlopt_res_to_result(
+                nlopt_set_ftol_abs(self.opt, tolerance)
+                )
+        }
+    }
+    
+    pub fn get_ftol_abs(& self) -> Option<f64> {
+        unsafe{
+            match nlopt_get_ftol_abs(self.opt) {
+                x if x < 0.0 => None,
+                x => Some(x),
+            }
+        }
+    }
+
+    pub fn set_xtol_rel(&mut self, tolerance: f64) -> StrResult {
+        unsafe {
+            NLoptOptimizer::<T>::nlopt_res_to_result(
+                nlopt_set_xtol_rel(self.opt, tolerance)
+                )
+        }
+    }
+    
+    pub fn get_xtol_rel(& self) -> Option<f64> {
+        unsafe{
+            match nlopt_get_xtol_rel(self.opt) {
+                x if x < 0.0 => None,
+                x => Some(x),
+            }
+        }
+    }
+
+    pub fn set_xtol_abs(&mut self, tolerance: &[f64]) -> StrResult{
+        unsafe {
+            NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_xtol_abs(self.opt, tolerance.as_ptr()))
+        }
+    }
+
+    pub fn set_xtol_abs1(&mut self, tolerance: f64) -> StrResult{
+        let tol : &[f64] = &vec![tolerance;self.n_dims];
+        self.set_xtol_abs(tol)
+    }
+    
+    pub fn get_xtol_abs(&mut self) -> Option<&[f64]> {
+        let mut tol : Vec<f64> = vec![0.0 as f64;self.n_dims];
+        unsafe {
+            let b = tol.as_mut_ptr();
+            let ret = nlopt_get_xtol_abs(self.opt, b as *mut f64);
+            match ret {
+                x if x < 0 => None,
+                _ => Some(slice::from_raw_parts(b as *mut f64,self.n_dims))
+            }
+        }
+    }
+
+    pub fn set_maxeval(&mut self, maxeval: u32) -> StrResult {
         unsafe{
             let ret = nlopt_set_maxeval(self.opt, maxeval as i32);
             NLoptOptimizer::<T>::nlopt_res_to_result(ret)
         }
     }
 
-    fn nlopt_res_to_result(ret: i32) -> Result<i32,i32> {
-        match ret {
-            x if x < 0 => Err(x),
-            x => Ok(x),
+    pub fn get_maxeval(&mut self) -> Option<u32> {
+        unsafe {
+            match nlopt_get_maxeval(self.opt){
+                x if x < 0 => None,
+                x => Some(x as u32),
+            }
+        }
+    }
+
+    pub fn set_maxtime(&mut self, timeout: f64) -> StrResult {
+        unsafe {
+            NLoptOptimizer::<T>::nlopt_res_to_result(
+                nlopt_set_maxtime(self.opt, timeout)
+                )
+        }
+    }
+    
+    pub fn get_maxtime(& self) -> Option<f64> {
+        unsafe{
+            match nlopt_get_maxtime(self.opt) {
+                x if x < 0.0 => None,
+                x => Some(x),
+            }
         }
     }
 
@@ -288,6 +413,32 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     //Preconditioning TODO
     //Version Number TODO
     //NLopt Refernce: http://ab-initio.mit.edu/wiki/index.php/NLopt_Reference
+
+    //helpers
+    fn nlopt_res_to_result(ret: i32) -> StrResult {
+        match ret {
+            x if x < 0 => Err(NLoptOptimizer::<T>::nlopt_result_to_string(x)),
+            x => Ok(NLoptOptimizer::<T>::nlopt_result_to_string(x)),
+        }
+    }
+
+    fn nlopt_result_to_string(n: i32) -> &'static str{
+        match n {
+           1 => "NLOPT_SUCCESS",
+           2 => "NLOPT_STOPVAL_REACHED",
+           3 => "NLOPT_FTOL_REACHED",
+           4 => "NLOPT_XTOL_REACHED",
+           5 => "NLOPT_MAXEVAL_REACHED",
+           6 => "NLOPT_MAXTIME_REACHED",
+           -1 => "NLOPT_FAILURE",
+           -2 => "NLOPT_INVALID_ARGS",
+           -3 => "NLOPT_OUT_OF_MEMORY",
+           -4 => "NLOPT_ROUNDOFF_LIMITED",
+           -5 => "NLOPT_FORCED_STOP",
+           _ => "Unknown return value",
+        }
+    }
+
 
     #[no_mangle]
     extern "C" fn function_raw_callback(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64 {
@@ -307,14 +458,10 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         ret
     }
 
-    pub fn minimize(&self, x_init:&mut[f64]) -> (Result<i32,i32>,f64) {
+    pub fn minimize(&self, x_init:&mut[f64]) -> (StrResult,f64) {
         unsafe {
             let mut min_value : f64 = 0.0;
-            let ret = nlopt_optimize(self.opt, x_init.as_mut_ptr(), &mut min_value); 
-            match ret < 0 {
-                true => (Err(ret),min_value),
-                false => (Ok(ret),min_value),
-            }
+            (NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_optimize(self.opt, x_init.as_mut_ptr(), &mut min_value)),min_value)
         }
     }
 }
@@ -350,10 +497,18 @@ mod tests {
             _ => (),
         };
 
+        println!("Adding equality constraint");
+        match opt.add_constraint(Box::new(Function::<f64>{ function: test_equality_constraint, params: 20.0, }), ConstraintType::EQUALITY, 1e-6) {
+            Err(x) => println!("Could not add equality constraint (Err {})",x),
+            _ => (),
+        };
+
         match opt.get_lower_bounds() {
             None => panic!("Could not read lower bounds"),
             Some(x) => println!("Lower bounds set to {:?}",x),
         };
+
+        println!("got stopval = {}",opt.get_stopval());
 
         match opt.set_maxeval(100) {
             Err(_) => panic!("Could not set maximum evaluations"),
@@ -365,8 +520,8 @@ mod tests {
         let mut b : Vec<f64> = vec![100.0;opt.n_dims];
         let (ret,min) = opt.minimize(&mut b);
         match ret {
-            Ok(x) => println!("Optimization succeeded. ret = {} ({}), min = {} @ {:?}",x,nlopt_result_to_string(x),min,b),
-            Err(x) => println!("Optimization failed. ret = {} ({}), min = {} @ {:?}",x,nlopt_result_to_string(x),min,b),
+            Ok(x) => println!("Optimization succeeded. ret = {}, min = {} @ {:?}",x,min,b),
+            Err(x) => println!("Optimization failed. ret = {}, min = {} @ {:?}",x,min,b),
         }
     }
 
@@ -390,20 +545,14 @@ mod tests {
         param-a[5]
     }
 
-    fn nlopt_result_to_string(n: i32) -> String{
-        match n {
-           1 => String::from("NLOPT_SUCCESS"),
-           2 => String::from("NLOPT_STOPVAL_REACHED"),
-           3 => String::from("NLOPT_FTOL_REACHED"),
-           4 => String::from("NLOPT_XTOL_REACHED"),
-           5 => String::from("NLOPT_MAXEVAL_REACHED"),
-           6 => String::from("NLOPT_MAXTIME_REACHED"),
-           -1 => String::from("NLOPT_FAILURE"),
-           -2 => String::from("NLOPT_INVALID_ARGS"),
-           -3 => String::from("NLOPT_OUT_OF_MEMORY"),
-           -4 => String::from("NLOPT_ROUNDOFF_LIMITED"),
-           -5 => String::from("NLOPT_FORCED_STOP"),
-           _ => String::from("Unknown return value"),
-        }
+    fn test_equality_constraint(a:&[f64], g:Option<&mut [f64]>, param:f64) -> f64 {
+        match g {
+            Some(x) => {    for (index, mut value) in x.iter_mut().enumerate() {
+                                *value = match index { 4 => -1.0, _ => 0.0 };
+                            }},
+            None => (),
+        };
+        param-a[4]
     }
+
 }
