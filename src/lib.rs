@@ -122,6 +122,7 @@ extern "C" {
     fn nlopt_get_maxtime(opt: *mut NLoptOpt) -> f64;
     fn nlopt_force_stop(opt: *mut NLoptOpt) -> i32;
     fn nlopt_set_force_stop(opt: *mut NLoptOpt, val: i32) -> i32;
+    fn nlopt_get_force_stop(opt: *mut NLoptOpt) -> i32;
 }
 
 pub struct NLoptOptimizer<T> {
@@ -407,6 +408,21 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     //Forced Termination
+
+    /// In certain cases, the caller may wish to force the optimization to halt, for some reason
+    /// unknown to NLopt. For example, if the user presses Ctrl-C, or there is an error of some
+    /// sort in the objective function. In this case, it is possible to tell NLopt to halt
+    /// the optimization gracefully, returning the best point found so far, by calling this
+    /// function from within your objective or constraint functions. This causes nlopt_optimize to
+    /// halt, returning the NLOPT_FORCED_STOP error code. It has no effect if not called
+    /// during nlopt_optimize.
+    ///
+    /// # Params
+    /// stopval: If you want to provide a bit more information, set a forced-stop integer value
+    /// ```val```, which can be later retrieved by calling: ```get_force_stop()```, which returns  the
+    /// last force-stop value that was set since the last nlopt_optimize. The force-stop value is
+    /// ```None``` at the beginning of nlopt_optimize. Passing ```stopval=0``` to
+    /// ```force_stop()``` tells NLopt not to force a halt.
     pub fn force_stop(&mut self, stopval: Option<i32>) -> StrResult {
         unsafe {
             match stopval {
@@ -416,6 +432,15 @@ impl <T> NLoptOptimizer<T> where T: Copy {
                 None => NLoptOptimizer::<T>::nlopt_res_to_result(
                     nlopt_force_stop(self.opt)
                     ),
+            }
+        }
+    }
+    
+    pub fn get_force_stop(&mut self) -> Option<i32> {
+        unsafe {
+            match nlopt_get_force_stop(self.opt) {
+                0 => None,
+                x => Some(x),
             }
         }
     }
