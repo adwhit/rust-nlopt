@@ -3,6 +3,7 @@
 //! # Rust-NLopt
 //! 
 //! This is a wrapper for the NLopt library (http://ab-initio.mit.edu/wiki/index.php/NLopt).
+//! Study first the documentation for the `NLoptOptimizer` `struct` to get started.
 
 pub enum NLoptOpt {}
 
@@ -102,8 +103,8 @@ extern "C" {
     fn nlopt_get_upper_bounds(opt: *const NLoptOpt, ub: *mut f64) -> i32;
     fn nlopt_add_inequality_constraint(opt: *mut NLoptOpt, fc: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d: *const c_void, tol: f64) -> i32;
     fn nlopt_add_equality_constraint(opt: *mut NLoptOpt, fc: extern "C" fn(n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d: *const c_void, tol: f64) -> i32;
-    fn nlopt_add_inequality_mconstraint(opt: *mut NLoptOpt, m:u32, fc: extern "C" fn(m:u32, r:*mut f64, n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d: *const c_void, tol:*const f64) -> i32;
-    fn nlopt_add_equality_mconstraint(opt: *mut NLoptOpt, m:u32, fc: extern "C" fn(m:u32, r:*mut f64, n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> f64, d: *const c_void, tol:*const f64) -> i32;
+    fn nlopt_add_inequality_mconstraint(opt: *mut NLoptOpt, m:u32, fc: extern "C" fn(m:u32, r:*mut f64, n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> i32, d: *const c_void, tol:*const f64) -> i32;
+    fn nlopt_add_equality_mconstraint(opt: *mut NLoptOpt, m:u32, fc: extern "C" fn(m:u32, r:*mut f64, n:u32,x:*const f64,g:*mut f64,d:*mut c_void) -> i32, d: *const c_void, tol:*const f64) -> i32;
     fn nlopt_remove_inequality_constraints(opt: *mut NLoptOpt) -> i32;
     fn nlopt_remove_equality_constraints(opt: *mut NLoptOpt) -> i32;
     fn nlopt_set_stopval(opt: *mut NLoptOpt, stopval:f64) -> i32;
@@ -135,6 +136,11 @@ extern "C" {
     fn nlopt_version(major: *mut i32, minor: *mut i32, bugfix: *mut i32);
 }
 
+/// This is the central ```struct``` of this library. It represents an optimization of a given
+/// function, called the objective function. The argument `x` to this function is an
+/// `n`-dimensional double-precision vector. The dimensions are set at creation of the struct and
+/// cannot be changed afterwards. NLopt offers different optimization algorithms. One must be
+/// chosen at struct creation and cannot be changed afterwards. Always use ```NLoptOptimizer::<T>::new()``` to create an `NLoptOptimizer` struct.
 pub struct NLoptOptimizer<T> {
     opt: *mut NLoptOpt,
     n_dims: usize,
@@ -148,11 +154,14 @@ pub type NLoptFn<T> = fn(argument: &[f64],
 
 type StrResult = Result<&'static str,&'static str>;
 
+/// Packs a function of type `NLoptFn<T>` with a user defined parameter set of type `T`.
 pub struct Function<T> {
     function: NLoptFn<T>,
     params: T,
 }
 
+/// Defines constants for equality constraints (of the form `f(x) = 0`) and inequality constraints
+/// (of the form `f(x) <= 0`).
 pub enum ConstraintType {
     EQUALITY,
     INEQUALITY,
@@ -163,11 +172,13 @@ struct Constraint<F> {
     ctype: ConstraintType,
 }
 
+/// A function `f(x) | R^n --> R^m`. 
 pub type NLoptMFn<T> = fn(result: &mut [f64],
                       argument: &[f64],
                       gradient: Option<&mut [f64]>,
-                      params: T) -> f64;
+                      params: T) -> Result<(),&'static str>;
 
+/// Packs an `m`-dimensional function of type `NLoptMFn<T>` with a user defined parameter set of type `T`.
 pub struct MFunction<T> {
     m: usize,
     function: NLoptMFn<T>,
@@ -175,6 +186,19 @@ pub struct MFunction<T> {
 }
 
 impl <T> NLoptOptimizer<T> where T: Copy {
+    ///Creates a new `NLoptOptimizer` struct.
+    ///
+    /// * `algorithm` - Which optimization algorithm to use. This cannot be changed after creation
+    /// of the struct
+    /// * `n_dims` - Dimension of the argument to the objective function
+    /// * `obj` - The objective function. This function has the signature `(&[f64],
+    /// Option<&mut [f64]>, T) -> f64`. The first argument is the vector `x` passed to the function.
+    /// The second argument is `Some(&mut [f64])` if the calling optimization algorithm needs
+    /// the gradient of the function. If the gradient is not needed, it is `None`. The last
+    /// argument is the user data provided beforehand using the `user_data` argument to the
+    /// constructor.
+    /// * `target` - Whether to minimize or maximize the objectiv function
+    /// * `user_data` - Optional data that is passed to the objective function
     pub fn new(algorithm: NLoptAlgorithm, n_dims: usize, obj: NLoptFn<T>, target : NLoptTarget, user_data: T) -> NLoptOptimizer<T> {
         unsafe{
             let fb = Box::new(Function{ function: obj, params: user_data });
@@ -194,6 +218,31 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     //Static Bounds
+    ///Most of the algorithms in NLopt are designed for minimization of functions with simple bound
+    ///constraints on the inputs. That is, the input vectors `x` are constrainted to lie in a
+    ///hyperrectangle `lower_bound[i] ≤ x[i] ≤ upper_bound[i] for 0 ≤ i < n`. NLopt guarantees that your objective
+    ///function and any nonlinear constraints will never be evaluated outside of these bounds
+    ///(unlike nonlinear constraints, which may be violated at intermediate steps).
+    ///
+    ///These bounds are specified by passing an array `bound` of length `n` (the dimension of the
+    ///problem) to one or both of the functions:
+    ///
+    ///`set_lower_bounds(&[f64])`
+    ///
+    ///`set_upper_bounds(&[f64])`
+    ///
+    ///If a lower/upper bound is not set, the default is no bound (unconstrained, i.e. a bound of
+    ///infinity); it is possible to have lower bounds but not upper bounds or vice versa.
+    ///Alternatively, the user can call one of the above functions and explicitly pass a lower
+    ///bound of `-INFINITY` and/or an upper bound of `+INFINITY` for some optimization parameters to
+    ///make them have no lower/upper bound, respectively.
+    ///
+    ///It is permitted to set `lower_bound[i] == upper_bound[i]` in one or more dimensions; this is equivalent to
+    ///fixing the corresponding `x[i]` parameter, eliminating it from the optimization.
+    ///
+    ///Note, however, that some of the algorithms in NLopt, in particular most of the
+    ///global-optimization algorithms, do not support unconstrained optimization and will return an
+    ///error in `optimize` if you do not supply finite lower and upper bounds.
     pub fn set_lower_bounds(&mut self, bound: &[f64]) -> Result<i32,i32> {
         let ret;
         unsafe{
@@ -205,6 +254,7 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
+    ///See documentation for `set_lower_bounds`
     pub fn set_upper_bounds(&mut self, bound: &[f64]) -> Result<i32,i32> {
         let ret;
         unsafe{
@@ -216,16 +266,21 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
+    ///For convenience, `set_lower_bound` is supplied in order to set the lower
+    ///bounds for all optimization parameters to a single constant
     pub fn set_lower_bound(&mut self, bound: f64) -> Result<i32,i32>{
         let v = vec![bound;self.n_dims];
         self.set_lower_bounds(&v)
     }
 
+    ///For convenience, `set_upper_bound` is supplied in order to set the upper
+    ///bounds for all optimization parameters to a single constant
     pub fn set_upper_bound(&mut self, bound: f64) -> Result<i32,i32>{
         let v = vec![bound;self.n_dims];
         self.set_upper_bounds(&v)
     }
 
+    ///Retrieve the current upper bonds on `x`
     pub fn get_upper_bounds(&self) -> Option<&[f64]>{
         let mut bound : Vec<f64> = vec![0.0 as f64;self.n_dims];
         unsafe {
@@ -238,6 +293,7 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
+    ///Retrieve the current lower bonds on `x`
     pub fn get_lower_bounds(&self) -> Option<&[f64]>{
         let mut bound : Vec<f64> = vec![0.0 as f64;self.n_dims];
         unsafe {
@@ -578,12 +634,14 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     #[no_mangle]
-    extern "C" fn mfunction_raw_callback(m:u32, re:*mut f64, n:u32, x:*const f64, g:*mut f64, d:*mut c_void) -> f64 {
+    extern "C" fn mfunction_raw_callback(m:u32, re:*mut f64, n:u32, x:*const f64, g:*mut f64, d:*mut c_void) -> i32 {
         let f : &MFunction<T> = unsafe { &*(d as *const MFunction<T>) };
         let argument = unsafe { slice::from_raw_parts(x,n as usize) };
         let gradient : Option<&mut [f64]> = unsafe { if g.is_null() { None } else { Some(slice::from_raw_parts_mut(g,(n as usize)*(m as usize))) } };
-        let ret : f64 = unsafe { ((*f).function)(slice::from_raw_parts_mut(re,m as usize), argument, gradient, (*f).params) };
-        ret
+        match unsafe { ((*f).function)(slice::from_raw_parts_mut(re,m as usize), argument, gradient, (*f).params) }{
+            Ok(_) => 1,
+            Err(x) => { println!("Error in mfunction: {}",x); -1 }
+        }
     }
 
     pub fn minimize(&self, x_init:&mut[f64]) -> (StrResult,f64) {
@@ -610,7 +668,7 @@ mod tests {
     fn it_works() {
         println!("Initializing optimizer");
         //initialize the optimizer, choose algorithm, dimensions, target function, user parameters
-        let mut opt = NLoptOptimizer::<f64>::new(NLoptAlgorithm::LD_MMA,10,test_objective,NLoptTarget::MINIMIZE,10.0);
+        let mut opt = NLoptOptimizer::<f64>::new(NLoptAlgorithm::LD_AUGLAG,10,test_objective,NLoptTarget::MINIMIZE,10.0);
 
         println!("Setting bounds");
         //set lower bounds for the search
