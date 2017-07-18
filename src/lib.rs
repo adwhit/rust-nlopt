@@ -5,13 +5,16 @@
 //! This is a wrapper for the NLopt library (http://ab-initio.mit.edu/wiki/index.php/NLopt).
 //! Study first the documentation for the `NLoptOptimizer` `struct` to get started.
 
-pub enum NLoptOpt {}
+enum NLoptOpt {}
 
+///Defines constants to specify whether the objective function should be minimized or maximized.
 pub enum NLoptTarget {
     MAXIMIZE,
     MINIMIZE,
 }
 
+///Optimization algorithms available in NLopt. For a description, check
+///http://ab-initio.mit.edu/wiki/index.php/NLopt_Algorithms
 #[repr(C)]
 #[allow(non_camel_case_types)]
 pub enum NLoptAlgorithm {
@@ -148,6 +151,16 @@ pub struct NLoptOptimizer<T> {
     function: NLoptFn<T>,
 }
 
+/// A function `f(x) | R^n --> R` with additional user specified parameters `params` of type `T`.
+///
+/// * `argument` - `n`-dimensional array `x`
+/// * `gradient` - `n`-dimensional array to store the gradient `grad f(x)`. If `gradient` matches
+/// `Some(x)`, the user is required to provide a gradient, otherwise the optimization will
+/// probabely fail.
+/// * `params` - user defined data
+///
+/// # Returns
+/// `f(x)`
 pub type NLoptFn<T> = fn(argument: &[f64],
                      gradient: Option<&mut [f64]>,
                      params: T) -> f64;
@@ -172,7 +185,19 @@ struct Constraint<F> {
     ctype: ConstraintType,
 }
 
-/// A function `f(x) | R^n --> R^m`. 
+/// A function `f(x) | R^n --> R^m` with additional user specified parameters `params` of type `T`.
+///
+/// * `result` - `m`-dimensional array to store the value `f(x)`
+/// * `argument` - `n`-dimensional array `x`
+/// * `gradient` - `n×m`-dimensional array to store the gradient `grad f(x)`. The n dimension of
+/// gradient is stored contiguously, so that `df_i / dx_j` is stored in `gradient[i*n + j]`. If
+/// `gradient` is `Some(x)`, the user is required to return a valid gradient, otherwise the
+/// optimization will most likely fail.
+/// * `params` - user defined data
+///
+/// # Returns
+/// If an error occurs, the function should return an `Err(x)` where `x` is a string literal
+/// specifying the error. On success, just return `Ok(())`.
 pub type NLoptMFn<T> = fn(result: &mut [f64],
                       argument: &[f64],
                       gradient: Option<&mut [f64]>,
@@ -307,6 +332,22 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     //Nonlinear Constraints
+    ///Several of the algorithms in NLopt (MMA, COBYLA, and ORIG_DIRECT) also support arbitrary
+    ///nonlinear inequality constraints, and some additionally allow nonlinear equality constraints
+    ///(ISRES and AUGLAG). For these algorithms, you can specify as many nonlinear constraints as
+    ///you wish.
+    ///
+    ///In particular, a nonlinear constraint of the form `fc(x) ≤ 0` or `fc(x) = 0`, where the function
+    ///fc is an `NLoptFn<T>`, can be specified by calling this function.
+    ///
+    ///* `t` - Specify whether the constraint is an equality (`fc(x) = 0`) or inequality (`fc(x) ≤ 0`) constraint.
+    ///* `tolerance` - This parameter is a tolerance
+    ///that is used for the purpose of stopping criteria only: a point `x` is considered feasible for
+    ///judging whether to stop the optimization if `fc(x) ≤ tol`. A tolerance of zero means that
+    ///NLopt will try not to consider any `x` to be converged unless the constraint is strictly
+    ///satisfied;
+    ///generally, at least a small positive tolerance is advisable to reduce sensitivity to
+    ///rounding errors.
     pub fn add_constraint(&mut self, constraint: Box<Function<T>>, t: ConstraintType, tolerance: f64) -> StrResult {
         match t {
             ConstraintType::INEQUALITY => unsafe { 
@@ -323,6 +364,17 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
     
     //UNTESTED
+    ///In some applications with multiple constraints, it is more convenient to define a single
+    ///function that returns the values (and gradients) of all constraints at once. For example,
+    ///different constraint functions might share computations in some way. Or, if you have a large
+    ///number of constraints, you may wish to compute them in parallel. This possibility is
+    ///supported by this function, which defines multiple constraints at once, or
+    ///equivalently a vector-valued constraint function `fc(x) | R^n --> R^m`:
+    ///
+    /// * `constraint` - A `Box` containing the constraint function bundled with user defined
+    /// parameters.
+    /// * `t` - Specify whether the constraint is an equality or inequality constraint
+    /// * `tolerance` - An array slice of length `m` of the tolerances in each constraint dimension
     pub fn add_mconstraint(&mut self, constraint: Box<MFunction<T>>, t: ConstraintType, tolerance: &[f64]) -> StrResult {
         let m: u32 = (*constraint).m as u32;
         match t {
@@ -340,6 +392,7 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
     
     //UNTESTED
+    ///Remove all of the inequality and equality constraints from a given problem.
     pub fn remove_constraints(&mut self) -> StrResult{
         unsafe {
             NLoptOptimizer::<T>::nlopt_res_to_result(
@@ -352,6 +405,18 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     //Stopping Criteria
+    ///Multiple stopping criteria for the optimization are supported,
+    ///as specified by the functions to modify a given optimization problem. The optimization
+    ///halts whenever any one of these criteria is satisfied. In some cases, the precise
+    ///interpretation of the stopping criterion depends on the optimization algorithm above
+    ///(although we have tried to make them as consistent as reasonably possible), and some
+    ///algorithms do not support all of the stopping criteria.
+    ///
+    ///Note: you do not need to use all of the stopping criteria! In most cases, you only need one
+    ///or two, and can omit the remainder (all criteria are disabled by default).
+    ///
+    ///This functions specifies a stop when an objective value of at least `stopval` is found: stop minimizing when an objective
+    ///`value ≤ stopval` is found, or stop maximizing a `value ≥ stopval` is found.
     pub fn set_stopval(&mut self, stopval: f64) -> StrResult {
         unsafe {
             NLoptOptimizer::<T>::nlopt_res_to_result(
@@ -366,6 +431,11 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
+    ///Set relative tolerance on function value: stop when an optimization step (or an estimate of
+    ///the optimum) changes the objective function value by less than `tolerance` multiplied by the
+    ///absolute value of the function value. (If there is any chance that your optimum function
+    ///value is close to zero, you might want to set an absolute tolerance with `set_ftol_abs`
+    ///as well.) Criterion is disabled if `tolerance` is non-positive.
     pub fn set_ftol_rel(&mut self, tolerance: f64) -> StrResult {
         unsafe {
             NLoptOptimizer::<T>::nlopt_res_to_result(
@@ -383,6 +453,9 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
+    ///Set absolute tolerance on function value: stop when an optimization step (or an estimate of
+    ///the optimum) changes the function value by less than `tolerance`. Criterion is disabled if `tolerance` is
+    ///non-positive.
     pub fn set_ftol_abs(&mut self, tolerance: f64) -> StrResult {
         unsafe {
             NLoptOptimizer::<T>::nlopt_res_to_result(
@@ -400,6 +473,11 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
+    ///Set relative tolerance on optimization parameters: stop when an optimization step (or an
+    ///estimate of the optimum) changes every parameter by less than `tolerance` multiplied by the absolute
+    ///value of the parameter. (If there is any chance that an optimal parameter is close to zero,
+    ///you might want to set an absolute tolerance with `set_xtol_abs` as well.) Criterion is
+    ///disabled if `tolerance` is non-positive.
     pub fn set_xtol_rel(&mut self, tolerance: f64) -> StrResult {
         unsafe {
             NLoptOptimizer::<T>::nlopt_res_to_result(
@@ -417,12 +495,17 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
+    ///Set absolute tolerances on optimization parameters. `tolerance` is a an array slice of length `n`
+    ///giving the tolerances: stop when an optimization step (or
+    ///an estimate of the optimum) changes every parameter `x[i]` by less than `tolerance[i]`.
     pub fn set_xtol_abs(&mut self, tolerance: &[f64]) -> StrResult{
         unsafe {
             NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_xtol_abs(self.opt, tolerance.as_ptr()))
         }
     }
 
+    ///For convenience, this function may be used to set the absolute tolerances in all `n`
+    ///optimization parameters to the same value.
     pub fn set_xtol_abs1(&mut self, tolerance: f64) -> StrResult{
         let tol : &[f64] = &vec![tolerance;self.n_dims];
         self.set_xtol_abs(tol)
@@ -440,6 +523,9 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
+    ///Stop when the number of function evaluations exceeds `maxeval`. (This is not a strict maximum:
+    ///the number of function evaluations may exceed `maxeval` slightly, depending upon the
+    ///algorithm.) Criterion is disabled if `maxeval` is non-positive.
     pub fn set_maxeval(&mut self, maxeval: u32) -> StrResult {
         unsafe{
             let ret = nlopt_set_maxeval(self.opt, maxeval as i32);
@@ -456,6 +542,9 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
+    ///Stop when the optimization time (in seconds) exceeds `maxtime`. (This is not a strict maximum:
+    ///the time may exceed `maxtime` slightly, depending upon the algorithm and on how slow your
+    ///function evaluation is.) Criterion is disabled if `maxtime` is non-positive.
     pub fn set_maxtime(&mut self, timeout: f64) -> StrResult {
         unsafe {
             NLoptOptimizer::<T>::nlopt_res_to_result(
@@ -512,6 +601,14 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
  
     //Local Optimization
+    ///Some of the algorithms, especially MLSL and AUGLAG, use a different optimization algorithm
+    ///as a subroutine, typically for local optimization. You can change the local search algorithm
+    ///and its tolerances using this function.
+    ///
+    ///Here, local_opt is another `NLoptOptimizer<T>` whose parameters are used to determine the local
+    ///search algorithm, its stopping criteria, and other algorithm parameters. (However, the
+    ///objective function, bounds, and nonlinear-constraint parameters of `local_opt` are ignored.)
+    ///The dimension `n` of `local_opt` must match that of the main optimization.
     pub fn set_local_optimizer(&mut self, local_opt: NLoptOptimizer<T>) -> StrResult{
         unsafe {
             NLoptOptimizer::<T>::nlopt_res_to_result( nlopt_set_local_optimizer(self.opt, local_opt.opt) )
@@ -519,6 +616,17 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
     
     //Initial Step Size
+    ///For derivative-free local-optimization algorithms, the optimizer must somehow decide on some
+    ///initial step size to perturb x by when it begins the optimization. This step size should be
+    ///big enough that the value of the objective changes significantly, but not too big if you
+    ///want to find the local optimum nearest to x. By default, NLopt chooses this initial step
+    ///size heuristically from the bounds, tolerances, and other information, but this may not
+    ///always be the best choice. You can use this function to modify the initial step size.
+    ///
+    ///Here, `dx` is an array of length `n` containing
+    ///the (nonzero) initial step size for each component of the optimization parameters `x`. For
+    ///convenience, if you want to set the step sizes in every direction to be the same value, you
+    ///can instead call `set_initial_step1`.
     pub fn set_initial_step(&mut self, dx: &[f64]) -> StrResult{
         unsafe {
             NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_initial_step(self.opt, dx.as_ptr()))
@@ -530,6 +638,10 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         self.set_initial_step(d)
     }
     
+    ///Here, `x` is the same as the initial guess that you plan to pass to `optimize` – if you
+    ///have not set the initial step and NLopt is using its heuristics, its heuristic step size may
+    ///depend on the initial `x`, which is why you must pass it here. Both `x` and the return value are arrays of
+    ///length `n`.
     pub fn get_initial_step(&mut self, x: &[f64]) -> Option<&[f64]> {
         let mut dx : Vec<f64> = vec![0.0 as f64;self.n_dims];
         unsafe {
@@ -543,6 +655,11 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     //Stochastic Population
+    ///Several of the stochastic search algorithms (e.g., CRS, MLSL, and ISRES) start by generating
+    ///some initial "population" of random points `x.` By default, this initial population size is
+    ///chosen heuristically in some algorithm-specific way, but the initial population can by
+    ///changed by calling this function. A `population` of zero implies that the heuristic default will be
+    ///used.
     pub fn set_population(&mut self, population: usize) -> StrResult {
         unsafe {
             NLoptOptimizer::<T>::nlopt_res_to_result( nlopt_set_population(self.opt, population as u32) )
@@ -556,6 +673,13 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     //Pseudorandom Numbers
+    ///For stochastic optimization algorithms, we use pseudorandom numbers generated by the
+    ///Mersenne Twister algorithm, based on code from Makoto Matsumoto. By default, the seed for
+    ///the random numbers is generated from the system time, so that you will get a different
+    ///sequence of pseudorandom numbers each time you run your program. If you want to use a
+    ///"deterministic" sequence of pseudorandom numbers, i.e. the same sequence from run to run,
+    ///you can set the seed with this function. To reset the seed based on the system time, you can
+    ///call this function with `seed = None`.
     pub fn srand_seed(seed: Option<u64>){
         unsafe{
             match seed {
@@ -566,6 +690,13 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 
     //Vector storage for limited-memory quasi-Newton algorithms
+    ///Some of the NLopt algorithms are limited-memory "quasi-Newton" algorithms, which "remember"
+    ///the gradients from a finite number M of the previous optimization steps in order to
+    ///construct an approximate 2nd derivative matrix. The bigger M is, the more storage the
+    ///algorithms require, but on the other hand they may converge faster for larger M. By default,
+    ///NLopt chooses a heuristic value of M, but this can be changed by calling this function.
+    ///Passing M=0 (the default) tells NLopt to use a heuristic value. By default, NLopt currently
+    ///sets M to 10 or at most 10 MiB worth of vectors, whichever is larger.
     pub fn set_vector_storage(&mut self, m: Option<usize>) -> StrResult {
         unsafe {
             match m {
@@ -586,6 +717,8 @@ impl <T> NLoptOptimizer<T> where T: Copy {
 
 
     //Version Number
+    ///To determine the version number of NLopt at runtime, you can call this function. For
+    ///example, NLopt version 3.1.4 would return `(3, 1, 4)`.
     pub fn version() -> (i32,i32,i32) {
         unsafe {
             let mut i: i32 = 0;
@@ -644,7 +777,12 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         }
     }
 
-    pub fn minimize(&self, x_init:&mut[f64]) -> (StrResult,f64) {
+    ///Once all of the desired optimization parameters have been specified in a given
+    ///`NLoptOptimzer`, you can perform the optimization by calling this function. On input,
+    ///`x_init` is an array of length `n` giving an initial
+    ///guess for the optimization parameters. On successful return, `x_init` contains the optimized values
+    ///of the parameters, and the function returns the corresponding value of the objective function.
+    pub fn optimize(&self, x_init:&mut[f64]) -> (StrResult,f64) {
         unsafe {
             let mut min_value : f64 = 0.0;
             (NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_optimize(self.opt, x_init.as_mut_ptr(), &mut min_value)),min_value)
@@ -707,7 +845,7 @@ mod tests {
         println!("Start optimization...");
         //do the actual optimization
         let mut b : Vec<f64> = vec![100.0;opt.n_dims];
-        let (ret,min) = opt.minimize(&mut b);
+        let (ret,min) = opt.optimize(&mut b);
         match ret {
             Ok(x) => println!("Optimization succeeded. ret = {}, min = {} @ {:?}",x,min,b),
             Err(x) => println!("Optimization failed. ret = {}, min = {} @ {:?}",x,min,b),
