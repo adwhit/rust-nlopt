@@ -17,6 +17,7 @@ pub enum NLoptTarget {
 ///http://ab-initio.mit.edu/wiki/index.php/NLopt_Algorithms
 #[repr(C)]
 #[allow(non_camel_case_types)]
+#[derive(Clone,Copy)]
 pub enum NLoptAlgorithm {
     GN_DIRECT = 0,
     GN_DIRECT_L,
@@ -144,10 +145,9 @@ extern "C" {
 /// `n`-dimensional double-precision vector. The dimensions are set at creation of the struct and
 /// cannot be changed afterwards. NLopt offers different optimization algorithms. One must be
 /// chosen at struct creation and cannot be changed afterwards. Always use ```NLoptOptimizer::<T>::new()``` to create an `NLoptOptimizer` struct.
-pub struct NLoptOptimizer<T> {
+pub struct NLoptOptimizer<T: Clone> {
     opt: *mut NLoptOpt,
     n_dims: usize,
-    params: T,
     function: NLoptFn<T>,
 }
 
@@ -210,7 +210,7 @@ pub struct MFunction<T> {
     params: T,
 }
 
-impl <T> NLoptOptimizer<T> where T: Copy {
+impl <T> NLoptOptimizer<T> where T: Clone {
     ///Creates a new `NLoptOptimizer` struct.
     ///
     /// * `algorithm` - Which optimization algorithm to use. This cannot be changed after creation
@@ -230,7 +230,6 @@ impl <T> NLoptOptimizer<T> where T: Copy {
             let opt = NLoptOptimizer {
                 opt: nlopt_create(algorithm as i32,n_dims as u32),
                 n_dims: n_dims,
-                params: user_data,
                 function: obj,
             };
             let u_data = Box::into_raw(fb) as *const c_void;
@@ -762,7 +761,7 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         let f : &Function<T> = unsafe { &*(d as *const Function<T>) };
         let argument = unsafe { slice::from_raw_parts(x,n as usize) };
         let gradient : Option<&mut [f64]> = unsafe { if g.is_null() { None } else { Some(slice::from_raw_parts_mut(g,n as usize)) } };
-        let ret : f64 = ((*f).function)(argument, gradient, (*f).params);
+        let ret : f64 = ((*f).function)(argument, gradient, (*f).params.clone());
         ret
     }
 
@@ -771,7 +770,7 @@ impl <T> NLoptOptimizer<T> where T: Copy {
         let f : &MFunction<T> = unsafe { &*(d as *const MFunction<T>) };
         let argument = unsafe { slice::from_raw_parts(x,n as usize) };
         let gradient : Option<&mut [f64]> = unsafe { if g.is_null() { None } else { Some(slice::from_raw_parts_mut(g,(n as usize)*(m as usize))) } };
-        match unsafe { ((*f).function)(slice::from_raw_parts_mut(re,m as usize), argument, gradient, (*f).params) }{
+        match unsafe { ((*f).function)(slice::from_raw_parts_mut(re,m as usize), argument, gradient, (*f).params.clone()) }{
             Ok(_) => 1,
             Err(x) => { println!("Error in mfunction: {}",x); -1 }
         }
@@ -790,7 +789,7 @@ impl <T> NLoptOptimizer<T> where T: Copy {
     }
 }
 
-impl <T> Drop for NLoptOptimizer<T> {
+impl <T: Clone> Drop for NLoptOptimizer<T> {
     fn drop(&mut self) {
         unsafe {
             nlopt_destroy(self.opt);
