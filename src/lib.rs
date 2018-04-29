@@ -5,9 +5,8 @@
 //! This is a wrapper for the NLopt library (http://ab-initio.mit.edu/wiki/index.php/NLopt).
 //! Study first the documentation for the `NLoptOptimizer` `struct` to get started.
 
-extern crate libc;
-use libc::*;
 use std::slice;
+use std::os::raw::{c_void, c_ulong};
 
 #[allow(non_camel_case_types)]
 #[allow(non_upper_case_globals)]
@@ -424,7 +423,7 @@ where
                     self.opt,
                     m,
                     NLoptOptimizer::<T>::mfunction_raw_callback,
-                    Box::into_raw(constraint) as *const c_void,
+                    Box::into_raw(constraint) as *mut c_void,
                     tolerance.as_ptr(),
                 ))
             },
