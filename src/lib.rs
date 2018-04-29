@@ -5,7 +5,15 @@
 //! This is a wrapper for the NLopt library (http://ab-initio.mit.edu/wiki/index.php/NLopt).
 //! Study first the documentation for the `NLoptOptimizer` `struct` to get started.
 
-enum NLoptOpt {}
+extern crate libc;
+use libc::*;
+use std::slice;
+
+#[allow(non_camel_case_types)]
+#[allow(non_upper_case_globals)]
+mod nlopt_sys;
+
+use nlopt_sys as sys;
 
 ///Defines constants to specify whether the objective function should be minimized or maximized.
 pub enum NLoptTarget {
@@ -88,14 +96,10 @@ pub enum NLoptAlgorithm {
     NUM_ALGORITHMS, /* not an algorithm, just the number of them */
 }
 
-extern crate libc;
-use libc::*;
-use std::slice;
+type NLoptOpt = sys::nlopt_opt_s;
 
 #[link(name = "nlopt", vers = "0.1.0")]
 extern "C" {
-    fn nlopt_create(algorithm: i32, n_dims: u32) -> *mut NLoptOpt;
-    fn nlopt_destroy(opt: *mut NLoptOpt);
     fn nlopt_set_min_objective(
         opt: *mut NLoptOpt,
         nlopt_fdf: extern "C" fn(n: u32, x: *const f64, g: *mut f64, d: *mut c_void) -> f64,
@@ -106,11 +110,6 @@ extern "C" {
         nlopt_fdf: extern "C" fn(n: u32, x: *const f64, g: *mut f64, d: *mut c_void) -> f64,
         d: *const c_void,
     ) -> i32;
-    fn nlopt_optimize(opt: *mut NLoptOpt, x_init: *mut f64, opt_value: *mut f64) -> i32;
-    fn nlopt_set_lower_bounds(opt: *mut NLoptOpt, lb: *const f64) -> i32;
-    fn nlopt_set_upper_bounds(opt: *mut NLoptOpt, ub: *const f64) -> i32;
-    fn nlopt_get_lower_bounds(opt: *const NLoptOpt, lb: *mut f64) -> i32;
-    fn nlopt_get_upper_bounds(opt: *const NLoptOpt, ub: *mut f64) -> i32;
     fn nlopt_add_inequality_constraint(
         opt: *mut NLoptOpt,
         fc: extern "C" fn(n: u32, x: *const f64, g: *mut f64, d: *mut c_void) -> f64,
@@ -139,35 +138,6 @@ extern "C" {
         d: *const c_void,
         tol: *const f64,
     ) -> i32;
-    fn nlopt_remove_inequality_constraints(opt: *mut NLoptOpt) -> i32;
-    fn nlopt_remove_equality_constraints(opt: *mut NLoptOpt) -> i32;
-    fn nlopt_set_stopval(opt: *mut NLoptOpt, stopval: f64) -> i32;
-    fn nlopt_get_stopval(opt: *const NLoptOpt) -> f64;
-    fn nlopt_set_ftol_rel(opt: *mut NLoptOpt, tol: f64) -> i32;
-    fn nlopt_get_ftol_rel(opt: *const NLoptOpt) -> f64;
-    fn nlopt_set_ftol_abs(opt: *mut NLoptOpt, tol: f64) -> i32;
-    fn nlopt_get_ftol_abs(opt: *const NLoptOpt) -> f64;
-    fn nlopt_set_xtol_rel(opt: *mut NLoptOpt, tol: f64) -> i32;
-    fn nlopt_get_xtol_rel(opt: *const NLoptOpt) -> f64;
-    fn nlopt_set_xtol_abs(opt: *mut NLoptOpt, tol: *const f64) -> i32;
-    fn nlopt_get_xtol_abs(opt: *const NLoptOpt, tol: *mut f64) -> i32;
-    fn nlopt_set_maxeval(opt: *mut NLoptOpt, maxeval: i32) -> i32;
-    fn nlopt_get_maxeval(opt: *const NLoptOpt) -> i32;
-    fn nlopt_set_maxtime(opt: *mut NLoptOpt, maxtime: f64) -> i32;
-    fn nlopt_get_maxtime(opt: *const NLoptOpt) -> f64;
-    fn nlopt_force_stop(opt: *mut NLoptOpt) -> i32;
-    fn nlopt_set_force_stop(opt: *mut NLoptOpt, val: i32) -> i32;
-    fn nlopt_get_force_stop(opt: *const NLoptOpt) -> i32;
-    fn nlopt_set_local_optimizer(opt: *mut NLoptOpt, local_opt: *mut NLoptOpt) -> i32;
-    fn nlopt_set_population(opt: *mut NLoptOpt, pop: u32) -> i32;
-    fn nlopt_get_population(opt: *const NLoptOpt) -> u32;
-    fn nlopt_set_initial_step(opt: *mut NLoptOpt, dx: *const f64) -> i32;
-    fn nlopt_get_initial_step(opt: *const NLoptOpt, x: *const f64, dx: *mut f64) -> i32;
-    fn nlopt_srand(seed: c_ulong);
-    fn nlopt_srand_time();
-    fn nlopt_set_vector_storage(opt: *mut NLoptOpt, m: u32) -> i32;
-    fn nlopt_get_vector_storage(opt: *const NLoptOpt) -> u32;
-    fn nlopt_version(major: *mut i32, minor: *mut i32, bugfix: *mut i32);
 }
 
 /// This is the central ```struct``` of this library. It represents an optimization of a given
@@ -176,7 +146,7 @@ extern "C" {
 /// cannot be changed afterwards. NLopt offers different optimization algorithms. One must be
 /// chosen at struct creation and cannot be changed afterwards. Always use ```NLoptOptimizer::<T>::new()``` to create an `NLoptOptimizer` struct.
 pub struct NLoptOptimizer<T: Clone> {
-    opt: *mut NLoptOpt,
+    opt: sys::nlopt_opt,
     n_dims: usize,
     function: NLoptFn<T>,
 }
@@ -267,7 +237,7 @@ where
                 params: user_data,
             });
             let opt = NLoptOptimizer {
-                opt: nlopt_create(algorithm as i32, n_dims as u32),
+                opt: sys::nlopt_create(algorithm as u32, n_dims as u32),
                 n_dims: n_dims,
                 function: obj,
             };
@@ -317,7 +287,7 @@ where
     pub fn set_lower_bounds(&mut self, bound: &[f64]) -> Result<i32, i32> {
         let ret;
         unsafe {
-            ret = nlopt_set_lower_bounds(self.opt, bound.as_ptr());
+            ret = sys::nlopt_set_lower_bounds(self.opt, bound.as_ptr());
         }
         match ret {
             x if x < 0 => Err(x),
@@ -329,7 +299,7 @@ where
     pub fn set_upper_bounds(&mut self, bound: &[f64]) -> Result<i32, i32> {
         let ret;
         unsafe {
-            ret = nlopt_set_upper_bounds(self.opt, bound.as_ptr());
+            ret = sys::nlopt_set_upper_bounds(self.opt, bound.as_ptr());
         }
         match ret {
             x if x < 0 => Err(x),
@@ -356,7 +326,7 @@ where
         let mut bound: Vec<f64> = vec![0.0 as f64; self.n_dims];
         unsafe {
             let b = bound.as_mut_ptr();
-            let ret = nlopt_get_upper_bounds(self.opt, b as *mut f64);
+            let ret = sys::nlopt_get_upper_bounds(self.opt, b as *mut f64);
             match ret {
                 x if x < 0 => None,
                 _ => Some(slice::from_raw_parts(b as *mut f64, self.n_dims)),
@@ -369,7 +339,7 @@ where
         let mut bound: Vec<f64> = vec![0.0 as f64; self.n_dims];
         unsafe {
             let b = bound.as_mut_ptr();
-            let ret = nlopt_get_lower_bounds(self.opt, b as *mut f64);
+            let ret = sys::nlopt_get_lower_bounds(self.opt, b as *mut f64);
             match ret {
                 x if x < 0 => None,
                 _ => Some(slice::from_raw_parts(b as *mut f64, self.n_dims)),
@@ -466,8 +436,8 @@ where
     pub fn remove_constraints(&mut self) -> StrResult {
         unsafe {
             NLoptOptimizer::<T>::nlopt_res_to_result(std::cmp::min(
-                nlopt_remove_inequality_constraints(self.opt),
-                nlopt_remove_equality_constraints(self.opt),
+                sys::nlopt_remove_inequality_constraints(self.opt),
+                sys::nlopt_remove_equality_constraints(self.opt),
             ))
         }
     }
@@ -486,11 +456,11 @@ where
     ///This functions specifies a stop when an objective value of at least `stopval` is found: stop minimizing when an objective
     ///`value ≤ stopval` is found, or stop maximizing a `value ≥ stopval` is found.
     pub fn set_stopval(&mut self, stopval: f64) -> StrResult {
-        unsafe { NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_stopval(self.opt, stopval)) }
+        unsafe { NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_set_stopval(self.opt, stopval)) }
     }
 
     pub fn get_stopval(&self) -> f64 {
-        unsafe { nlopt_get_stopval(self.opt) }
+        unsafe { sys::nlopt_get_stopval(self.opt) }
     }
 
     ///Set relative tolerance on function value: stop when an optimization step (or an estimate of
@@ -499,12 +469,12 @@ where
     ///value is close to zero, you might want to set an absolute tolerance with `set_ftol_abs`
     ///as well.) Criterion is disabled if `tolerance` is non-positive.
     pub fn set_ftol_rel(&mut self, tolerance: f64) -> StrResult {
-        unsafe { NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_ftol_rel(self.opt, tolerance)) }
+        unsafe { NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_set_ftol_rel(self.opt, tolerance)) }
     }
 
     pub fn get_ftol_rel(&self) -> Option<f64> {
         unsafe {
-            match nlopt_get_ftol_rel(self.opt) {
+            match sys::nlopt_get_ftol_rel(self.opt) {
                 x if x < 0.0 => None,
                 x => Some(x),
             }
@@ -515,12 +485,12 @@ where
     ///the optimum) changes the function value by less than `tolerance`. Criterion is disabled if `tolerance` is
     ///non-positive.
     pub fn set_ftol_abs(&mut self, tolerance: f64) -> StrResult {
-        unsafe { NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_ftol_abs(self.opt, tolerance)) }
+        unsafe { NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_set_ftol_abs(self.opt, tolerance)) }
     }
 
     pub fn get_ftol_abs(&self) -> Option<f64> {
         unsafe {
-            match nlopt_get_ftol_abs(self.opt) {
+            match sys::nlopt_get_ftol_abs(self.opt) {
                 x if x < 0.0 => None,
                 x => Some(x),
             }
@@ -533,12 +503,12 @@ where
     ///you might want to set an absolute tolerance with `set_xtol_abs` as well.) Criterion is
     ///disabled if `tolerance` is non-positive.
     pub fn set_xtol_rel(&mut self, tolerance: f64) -> StrResult {
-        unsafe { NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_xtol_rel(self.opt, tolerance)) }
+        unsafe { NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_set_xtol_rel(self.opt, tolerance)) }
     }
 
     pub fn get_xtol_rel(&self) -> Option<f64> {
         unsafe {
-            match nlopt_get_xtol_rel(self.opt) {
+            match sys::nlopt_get_xtol_rel(self.opt) {
                 x if x < 0.0 => None,
                 x => Some(x),
             }
@@ -550,7 +520,7 @@ where
     ///an estimate of the optimum) changes every parameter `x[i]` by less than `tolerance[i]`.
     pub fn set_xtol_abs(&mut self, tolerance: &[f64]) -> StrResult {
         unsafe {
-            NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_xtol_abs(
+            NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_set_xtol_abs(
                 self.opt,
                 tolerance.as_ptr(),
             ))
@@ -568,7 +538,7 @@ where
         let mut tol: Vec<f64> = vec![0.0 as f64; self.n_dims];
         unsafe {
             let b = tol.as_mut_ptr();
-            let ret = nlopt_get_xtol_abs(self.opt, b as *mut f64);
+            let ret = sys::nlopt_get_xtol_abs(self.opt, b as *mut f64);
             match ret {
                 x if x < 0 => None,
                 _ => Some(slice::from_raw_parts(b as *mut f64, self.n_dims)),
@@ -581,14 +551,14 @@ where
     ///algorithm.) Criterion is disabled if `maxeval` is non-positive.
     pub fn set_maxeval(&mut self, maxeval: u32) -> StrResult {
         unsafe {
-            let ret = nlopt_set_maxeval(self.opt, maxeval as i32);
+            let ret = sys::nlopt_set_maxeval(self.opt, maxeval as i32);
             NLoptOptimizer::<T>::nlopt_res_to_result(ret)
         }
     }
 
     pub fn get_maxeval(&mut self) -> Option<u32> {
         unsafe {
-            match nlopt_get_maxeval(self.opt) {
+            match sys::nlopt_get_maxeval(self.opt) {
                 x if x < 0 => None,
                 x => Some(x as u32),
             }
@@ -599,12 +569,12 @@ where
     ///the time may exceed `maxtime` slightly, depending upon the algorithm and on how slow your
     ///function evaluation is.) Criterion is disabled if `maxtime` is non-positive.
     pub fn set_maxtime(&mut self, timeout: f64) -> StrResult {
-        unsafe { NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_maxtime(self.opt, timeout)) }
+        unsafe { NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_set_maxtime(self.opt, timeout)) }
     }
 
     pub fn get_maxtime(&self) -> Option<f64> {
         unsafe {
-            match nlopt_get_maxtime(self.opt) {
+            match sys::nlopt_get_maxtime(self.opt) {
                 x if x < 0.0 => None,
                 x => Some(x),
             }
@@ -631,16 +601,16 @@ where
         unsafe {
             match stopval {
                 Some(x) => {
-                    NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_force_stop(self.opt, x))
+                    NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_set_force_stop(self.opt, x))
                 }
-                None => NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_force_stop(self.opt)),
+                None => NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_force_stop(self.opt)),
             }
         }
     }
 
     pub fn get_force_stop(&mut self) -> Option<i32> {
         unsafe {
-            match nlopt_get_force_stop(self.opt) {
+            match sys::nlopt_get_force_stop(self.opt) {
                 0 => None,
                 x => Some(x),
             }
@@ -658,7 +628,7 @@ where
     ///The dimension `n` of `local_opt` must match that of the main optimization.
     pub fn set_local_optimizer(&mut self, local_opt: NLoptOptimizer<T>) -> StrResult {
         unsafe {
-            NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_local_optimizer(
+            NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_set_local_optimizer(
                 self.opt,
                 local_opt.opt,
             ))
@@ -679,7 +649,7 @@ where
     ///can instead call `set_initial_step1`.
     pub fn set_initial_step(&mut self, dx: &[f64]) -> StrResult {
         unsafe {
-            NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_initial_step(self.opt, dx.as_ptr()))
+            NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_set_initial_step(self.opt, dx.as_ptr()))
         }
     }
 
@@ -696,7 +666,7 @@ where
         let mut dx: Vec<f64> = vec![0.0 as f64; self.n_dims];
         unsafe {
             let b = dx.as_mut_ptr();
-            let ret = nlopt_get_initial_step(self.opt, x.as_ptr(), b as *mut f64);
+            let ret = sys::nlopt_get_initial_step(self.opt, x.as_ptr(), b as *mut f64);
             match ret {
                 x if x < 0 => None,
                 _ => Some(slice::from_raw_parts(b as *mut f64, self.n_dims)),
@@ -712,7 +682,7 @@ where
     ///used.
     pub fn set_population(&mut self, population: usize) -> StrResult {
         unsafe {
-            NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_population(
+            NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_set_population(
                 self.opt,
                 population as u32,
             ))
@@ -720,7 +690,7 @@ where
     }
 
     pub fn get_population(&mut self) -> usize {
-        unsafe { nlopt_get_population(self.opt) as usize }
+        unsafe { sys::nlopt_get_population(self.opt) as usize }
     }
 
     //Pseudorandom Numbers
@@ -734,8 +704,8 @@ where
     pub fn srand_seed(seed: Option<u64>) {
         unsafe {
             match seed {
-                None => nlopt_srand_time(),
-                Some(x) => nlopt_srand(x as c_ulong),
+                None => sys::nlopt_srand_time(),
+                Some(x) => sys::nlopt_srand(x as c_ulong),
             }
         }
     }
@@ -751,10 +721,10 @@ where
     pub fn set_vector_storage(&mut self, m: Option<usize>) -> StrResult {
         unsafe {
             match m {
-                None => NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_vector_storage(
+                None => NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_set_vector_storage(
                     self.opt, 0 as u32,
                 )),
-                Some(x) => NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_set_vector_storage(
+                Some(x) => NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_set_vector_storage(
                     self.opt, x as u32,
                 )),
             }
@@ -762,7 +732,7 @@ where
     }
 
     pub fn get_vector_storage(&mut self) -> usize {
-        unsafe { nlopt_get_vector_storage(self.opt) as usize }
+        unsafe { sys::nlopt_get_vector_storage(self.opt) as usize }
     }
 
     //Preconditioning TODO --> this is somewhat complex but not overly so. Just did not get around
@@ -776,7 +746,7 @@ where
             let mut i: i32 = 0;
             let mut j: i32 = 0;
             let mut k: i32 = 0;
-            nlopt_version(&mut i, &mut j, &mut k);
+            sys::nlopt_version(&mut i, &mut j, &mut k);
             (i, j, k)
         }
     }
@@ -866,7 +836,7 @@ where
         unsafe {
             let mut min_value: f64 = 0.0;
             (
-                NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_optimize(
+                NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_optimize(
                     self.opt,
                     x_init.as_mut_ptr(),
                     &mut min_value,
@@ -880,7 +850,7 @@ where
 impl<T: Clone> Drop for NLoptOptimizer<T> {
     fn drop(&mut self) {
         unsafe {
-            nlopt_destroy(self.opt);
+            sys::nlopt_destroy(self.opt);
         }
     }
 }
