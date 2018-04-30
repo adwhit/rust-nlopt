@@ -6,7 +6,7 @@
 //! Study first the documentation for the `NLoptOptimizer` `struct` to get started.
 
 use std::slice;
-use std::os::raw::{c_void, c_ulong};
+use std::os::raw::{c_void, c_ulong, c_uint};
 
 #[allow(non_camel_case_types)]
 #[allow(non_upper_case_globals)]
@@ -15,112 +15,66 @@ mod nlopt_sys;
 use nlopt_sys as sys;
 
 ///Defines constants to specify whether the objective function should be minimized or maximized.
-pub enum NLoptTarget {
+pub enum Target {
     Maximize,
     Minimize,
 }
 
-///Optimization algorithms available in NLopt. For a description, check
-///http://ab-initio.mit.edu/wiki/index.php/NLopt_Algorithms
-#[allow(non_camel_case_types)]
-#[derive(Clone, Copy)]
-pub enum NLoptAlgorithm {
+pub enum Algorithm {
     GN_DIRECT = 0,
-    GN_DIRECT_L,
-    GN_DIRECT_L_RAND,
-    GN_DIRECT_NOSCAL,
-    GN_DIRECT_L_NOSCAL,
-    GN_DIRECT_L_RAND_NOSCAL,
+    GN_DIRECT_L = 1,
+    GN_DIRECT_L_RAND = 2,
+    GN_DIRECT_NOSCAL = 3,
+    GN_DIRECT_L_NOSCAL = 4,
+    GN_DIRECT_L_RAND_NOSCAL = 5,
+    GN_ORIG_DIRECT = 6,
+    GN_ORIG_DIRECT_L = 7,
+    GD_STOGO = 8,
+    GD_STOGO_RAND = 9,
 
-    GN_ORIG_DIRECT,
-    GN_ORIG_DIRECT_L,
+    LD_LBFGS_NOCEDAL = 10,
+    LD_LBFGS = 11,
+    LN_PRAXIS = 12,
+    LD_VAR1 = 13,
+    LD_VAR2 = 14,
+    LD_TNEWTON = 15,
+    LD_TNEWTON_RESTART = 16,
+    LD_TNEWTON_PRECOND = 17,
+    LD_TNEWTON_PRECOND_RESTART = 18,
 
-    GD_STOGO,
-    GD_STOGO_RAND,
+    GN_CRS2_LM = 19,
+    GN_MLSL = 20,
+    GD_MLSL = 21,
+    GN_MLSL_LDS = 22,
+    GD_MLSL_LDS = 23,
 
-    LD_LBFGS_NOCEDAL,
+    LD_MMA = 24,
+    LN_COBYLA = 25,
+    LN_NEWUOA = 26,
+    LN_NEWUOA_BOUND = 27,
+    LN_NELDERMEAD = 28,
+    LN_SBPLX = 29,
+    LN_AUGLAG = 30,
+    LD_AUGLAG = 31,
+    LN_AUGLAG_EQ = 32,
+    LD_AUGLAG_EQ = 33,
+    LN_BOBYQA = 34,
 
-    LD_LBFGS,
-
-    LN_PRAXIS,
-
-    LD_VAR1,
-    LD_VAR2,
-
-    LD_TNEWTON,
-    LD_TNEWTON_RESTART,
-    LD_TNEWTON_PRECOND,
-    LD_TNEWTON_PRECOND_RESTART,
-
-    GN_CRS2_LM,
-
-    GN_MLSL,
-    GD_MLSL,
-    GN_MLSL_LDS,
-    GD_MLSL_LDS,
-
-    LD_MMA,
-
-    LN_COBYLA,
-
-    LN_NEWUOA,
-    LN_NEWUOA_BOUND,
-
-    LN_NELDERMEAD,
-    LN_SBPLX,
-
-    LN_AUGLAG,
-    LD_AUGLAG,
-    LN_AUGLAG_EQ,
-    LD_AUGLAG_EQ,
-
-    LN_BOBYQA,
-
-    GN_ISRES,
-
-    /* new variants that require local_optimizer to be set,
-     * not with older constants for backwards compatibility
-     **/
-    AUGLAG,
-    AUGLAG_EQ,
-    G_MLSL,
-    G_MLSL_LDS,
-
-    LD_SLSQP,
-
-    LD_CCSAQ,
-
-    GN_ESCH,
-
-    NUM_ALGORITHMS, /* not an algorithm, just the number of them */
+    GN_ISRES = 35,
+    AUGLAG = 36,
+    AUGLAG_EQ = 37,
+    G_MLSL = 38,
+    G_MLSL_LDS = 39,
+    LD_SLSQP = 40,
+    LD_CCSAQ = 41,
+    GN_ESCH = 42,
+    NUM_ALGORITHMS = 43,
 }
 
 type NLoptOpt = sys::nlopt_opt_s;
 
 #[link(name = "nlopt", vers = "0.1.0")]
 extern "C" {
-    fn nlopt_set_min_objective(
-        opt: *mut NLoptOpt,
-        nlopt_fdf: extern "C" fn(n: u32, x: *const f64, g: *mut f64, d: *mut c_void) -> f64,
-        d: *const c_void,
-    ) -> i32;
-    fn nlopt_set_max_objective(
-        opt: *mut NLoptOpt,
-        nlopt_fdf: extern "C" fn(n: u32, x: *const f64, g: *mut f64, d: *mut c_void) -> f64,
-        d: *const c_void,
-    ) -> i32;
-    fn nlopt_add_inequality_constraint(
-        opt: *mut NLoptOpt,
-        fc: extern "C" fn(n: u32, x: *const f64, g: *mut f64, d: *mut c_void) -> f64,
-        d: *const c_void,
-        tol: f64,
-    ) -> i32;
-    fn nlopt_add_equality_constraint(
-        opt: *mut NLoptOpt,
-        fc: extern "C" fn(n: u32, x: *const f64, g: *mut f64, d: *mut c_void) -> f64,
-        d: *const c_void,
-        tol: f64,
-    ) -> i32;
     fn nlopt_add_inequality_mconstraint(
         opt: *mut NLoptOpt,
         m: u32,
@@ -147,7 +101,7 @@ extern "C" {
 pub struct NLoptOptimizer<T: Clone> {
     opt: sys::nlopt_opt,
     n_dims: usize,
-    function: NLoptFn<T>,
+    function: ObjectiveFn<T>,
 }
 
 /// A function `f(x) | R^n --> R` with additional user specified parameters `params` of type `T`.
@@ -160,13 +114,13 @@ pub struct NLoptOptimizer<T: Clone> {
 ///
 /// # Returns
 /// `f(x)`
-pub type NLoptFn<T> = fn(argument: &[f64], gradient: Option<&mut [f64]>, params: T) -> f64;
+pub type ObjectiveFn<T> = fn(argument: &[f64], gradient: Option<&mut [f64]>, params: T) -> f64;
 
 type StrResult = Result<&'static str, &'static str>;
 
-/// Packs a function of type `NLoptFn<T>` with a user defined parameter set of type `T`.
+/// Packs a function of type `ObjectiveFn<T>` with a user defined parameter set of type `T`.
 pub struct Function<T> {
-    function: NLoptFn<T>,
+    function: ObjectiveFn<T>,
     params: T,
 }
 
@@ -224,10 +178,10 @@ where
     /// * `target` - Whether to minimize or maximize the objectiv function
     /// * `user_data` - Optional data that is passed to the objective function
     pub fn new(
-        algorithm: NLoptAlgorithm,
+        algorithm: Algorithm,
         n_dims: usize,
-        obj: NLoptFn<T>,
-        target: NLoptTarget,
+        obj: ObjectiveFn<T>,
+        target: Target,
         user_data: T,
     ) -> NLoptOptimizer<T> {
         unsafe {
@@ -240,16 +194,16 @@ where
                 n_dims: n_dims,
                 function: obj,
             };
-            let u_data = Box::into_raw(fb) as *const c_void;
+            let u_data = Box::into_raw(fb) as *mut c_void;
             match target {
-                NLoptTarget::Minimize => nlopt_set_min_objective(
+                Target::Minimize => sys::nlopt_set_min_objective(
                     opt.opt,
-                    NLoptOptimizer::<T>::function_raw_callback,
+                    Some(NLoptOptimizer::<T>::function_raw_callback),
                     u_data,
                 ),
-                NLoptTarget::Maximize => nlopt_set_max_objective(
+                Target::Maximize => sys::nlopt_set_max_objective(
                     opt.opt,
-                    NLoptOptimizer::<T>::function_raw_callback,
+                    Some(NLoptOptimizer::<T>::function_raw_callback),
                     u_data,
                 ),
             };
@@ -353,7 +307,7 @@ where
     ///you wish.
     ///
     ///In particular, a nonlinear constraint of the form `fc(x) ≤ 0` or `fc(x) = 0`, where the function
-    ///fc is an `NLoptFn<T>`, can be specified by calling this function.
+    ///fc is an `ObjectiveFn<T>`, can be specified by calling this function.
     ///
     ///* `t` - Specify whether the constraint is an equality (`fc(x) = 0`) or inequality (`fc(x) ≤ 0`) constraint.
     ///* `tolerance` - This parameter is a tolerance
@@ -371,18 +325,18 @@ where
     ) -> StrResult {
         match t {
             ConstraintType::Inequality => unsafe {
-                NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_add_inequality_constraint(
+                NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_add_inequality_constraint(
                     self.opt,
-                    NLoptOptimizer::<T>::function_raw_callback,
-                    Box::into_raw(constraint) as *const c_void,
+                    Some(NLoptOptimizer::<T>::function_raw_callback),
+                    Box::into_raw(constraint) as *mut c_void,
                     tolerance,
                 ))
             },
             ConstraintType::Equality => unsafe {
-                NLoptOptimizer::<T>::nlopt_res_to_result(nlopt_add_equality_constraint(
+                NLoptOptimizer::<T>::nlopt_res_to_result(sys::nlopt_add_equality_constraint(
                     self.opt,
-                    NLoptOptimizer::<T>::function_raw_callback,
-                    Box::into_raw(constraint) as *const c_void,
+                    Some(NLoptOptimizer::<T>::function_raw_callback),
+                    Box::into_raw(constraint) as *mut c_void,
                     tolerance,
                 ))
             },
@@ -778,7 +732,7 @@ where
     }
 
     #[no_mangle]
-    extern "C" fn function_raw_callback(n: u32, x: *const f64, g: *mut f64, d: *mut c_void) -> f64 {
+    extern "C" fn function_raw_callback(n: c_uint, x: *const f64, g: *mut f64, d: *mut c_void) -> f64 {
         let f: &Function<T> = unsafe { &*(d as *const Function<T>) };
         let argument = unsafe { slice::from_raw_parts(x, n as usize) };
         let gradient: Option<&mut [f64]> = unsafe {
