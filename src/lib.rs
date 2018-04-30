@@ -119,6 +119,61 @@ fn result_from_outcome(outcome: sys::nlopt_result) -> OptResult {
     }
 }
 
+#[no_mangle]
+extern "C" fn function_raw_callback<T: Clone>(
+    n: c_uint,
+    x: *const f64,
+    g: *mut f64,
+    d: *mut c_void,
+) -> f64 {
+    let f: &Function<T> = unsafe { &*(d as *const Function<T>) };
+    let argument = unsafe { slice::from_raw_parts(x, n as usize) };
+    let gradient: Option<&mut [f64]> = unsafe {
+        if g.is_null() {
+            None
+        } else {
+            Some(slice::from_raw_parts_mut(g, n as usize))
+        }
+    };
+    let ret: f64 = ((*f).function)(argument, gradient, (*f).params.clone());
+    ret
+}
+
+#[no_mangle]
+extern "C" fn mfunction_raw_callback<T: Clone>(
+    m: u32,
+    re: *mut f64,
+    n: u32,
+    x: *const f64,
+    g: *mut f64,
+    d: *mut c_void,
+) -> i32 {
+    let f: &MFunction<T> = unsafe { &*(d as *const MFunction<T>) };
+    let argument = unsafe { slice::from_raw_parts(x, n as usize) };
+    let gradient: Option<&mut [f64]> = unsafe {
+        if g.is_null() {
+            None
+        } else {
+            Some(slice::from_raw_parts_mut(g, (n as usize) * (m as usize)))
+        }
+    };
+    match unsafe {
+        ((*f).function)(
+            slice::from_raw_parts_mut(re, m as usize),
+            argument,
+            gradient,
+            (*f).params.clone(),
+        )
+    } {
+        Ok(_) => 1,
+        Err(x) => {
+            println!("Error in mfunction: {}", x);
+            -1
+        }
+    }
+}
+
+
 #[link(name = "nlopt", vers = "0.1.0")]
 extern "C" {
     fn nlopt_add_inequality_mconstraint(
@@ -243,14 +298,14 @@ where
             Target::Minimize => unsafe {
                 sys::nlopt_set_min_objective(
                     nlopt.opt,
-                    Some(Nlopt::<T>::function_raw_callback),
+                    Some(function_raw_callback::<T>),
                     u_data,
                 )
             },
             Target::Maximize => unsafe {
                 sys::nlopt_set_max_objective(
                     nlopt.opt,
-                    Some(Nlopt::<T>::function_raw_callback),
+                    Some(function_raw_callback::<T>),
                     u_data,
                 )
             },
@@ -360,7 +415,7 @@ where
             ConstraintType::Inequality => unsafe {
                 sys::nlopt_add_inequality_constraint(
                     self.opt,
-                    Some(Nlopt::<T>::function_raw_callback),
+                    Some(function_raw_callback::<T>),
                     Box::into_raw(constraint) as *mut c_void,
                     tolerance,
                 )
@@ -368,7 +423,7 @@ where
             ConstraintType::Equality => unsafe {
                 sys::nlopt_add_equality_constraint(
                     self.opt,
-                    Some(Nlopt::<T>::function_raw_callback),
+                    Some(function_raw_callback::<T>),
                     Box::into_raw(constraint) as *mut c_void,
                     tolerance,
                 )
@@ -398,11 +453,11 @@ where
         let m: u32 = (*constraint).m as u32;
         let outcome = match t {
             ConstraintType::Inequality => unsafe {
-                nlopt_add_inequality_mconstraint(
+                sys::nlopt_add_inequality_mconstraint(
                     self.opt,
                     m,
-                    Nlopt::<T>::mfunction_raw_callback,
-                    Box::into_raw(constraint) as *const c_void,
+                    Some(mfunction_raw_callback::<T>),
+                    Box::into_raw(constraint) as *mut c_void,
                     tolerance.as_ptr(),
                 )
             },
@@ -410,7 +465,7 @@ where
                 nlopt_add_equality_mconstraint(
                     self.opt,
                     m,
-                    Nlopt::<T>::mfunction_raw_callback,
+                    mfunction_raw_callback,
                     Box::into_raw(constraint) as *mut c_void,
                     tolerance.as_ptr(),
                 )
@@ -703,60 +758,6 @@ where
     }
 
     //NLopt Refernce: http://ab-initio.mit.edu/wiki/index.php/NLopt_Reference
-
-    #[no_mangle]
-    extern "C" fn function_raw_callback(
-        n: c_uint,
-        x: *const f64,
-        g: *mut f64,
-        d: *mut c_void,
-    ) -> f64 {
-        let f: &Function<T> = unsafe { &*(d as *const Function<T>) };
-        let argument = unsafe { slice::from_raw_parts(x, n as usize) };
-        let gradient: Option<&mut [f64]> = unsafe {
-            if g.is_null() {
-                None
-            } else {
-                Some(slice::from_raw_parts_mut(g, n as usize))
-            }
-        };
-        let ret: f64 = ((*f).function)(argument, gradient, (*f).params.clone());
-        ret
-    }
-
-    #[no_mangle]
-    extern "C" fn mfunction_raw_callback(
-        m: u32,
-        re: *mut f64,
-        n: u32,
-        x: *const f64,
-        g: *mut f64,
-        d: *mut c_void,
-    ) -> i32 {
-        let f: &MFunction<T> = unsafe { &*(d as *const MFunction<T>) };
-        let argument = unsafe { slice::from_raw_parts(x, n as usize) };
-        let gradient: Option<&mut [f64]> = unsafe {
-            if g.is_null() {
-                None
-            } else {
-                Some(slice::from_raw_parts_mut(g, (n as usize) * (m as usize)))
-            }
-        };
-        match unsafe {
-            ((*f).function)(
-                slice::from_raw_parts_mut(re, m as usize),
-                argument,
-                gradient,
-                (*f).params.clone(),
-            )
-        } {
-            Ok(_) => 1,
-            Err(x) => {
-                println!("Error in mfunction: {}", x);
-                -1
-            }
-        }
-    }
 
     ///Once all of the desired optimization parameters have been specified in a given
     ///`NLoptOptimzer`, you can perform the optimization by calling this function. On input,
