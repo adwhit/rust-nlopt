@@ -72,7 +72,7 @@ pub enum Algorithm {
 }
 
 #[repr(i32)]
-enum FailState {
+pub enum FailState {
     Failure = sys::nlopt_result_NLOPT_FAILURE,
     InvalidArgs = sys::nlopt_result_NLOPT_INVALID_ARGS,
     OutOfMemory = sys::nlopt_result_NLOPT_OUT_OF_MEMORY,
@@ -81,7 +81,7 @@ enum FailState {
 }
 
 #[repr(i32)]
-enum SuccessState {
+pub enum SuccessState {
     Success = sys::nlopt_result_NLOPT_SUCCESS,
     StopvalReached = sys::nlopt_result_NLOPT_STOPVAL_REACHED,
     FtolReached = sys::nlopt_result_NLOPT_FTOL_REACHED,
@@ -228,31 +228,34 @@ where
         target: Target,
         user_data: T,
     ) -> Nlopt<T> {
-        unsafe {
-            let fb = Box::new(Function {
-                function: obj,
-                params: user_data,
-            });
-            let opt = Nlopt {
-                opt: sys::nlopt_create(algorithm as u32, n_dims as u32),
-                n_dims: n_dims,
-                function: obj,
-            };
-            let u_data = Box::into_raw(fb) as *mut c_void;
-            match target {
-                Target::Minimize => sys::nlopt_set_min_objective(
-                    opt.opt,
+        let opt = unsafe {sys::nlopt_create(algorithm as u32, n_dims as u32)};
+        let fb = Box::new(Function {
+            function: obj,
+            params: user_data,
+        });
+        let nlopt = Nlopt {
+            opt,
+            n_dims: n_dims,
+            function: obj,
+        };
+        let u_data = Box::into_raw(fb) as *mut c_void;
+        match target {
+            Target::Minimize => unsafe {
+                sys::nlopt_set_min_objective(
+                    nlopt.opt,
                     Some(Nlopt::<T>::function_raw_callback),
                     u_data,
-                ),
-                Target::Maximize => sys::nlopt_set_max_objective(
-                    opt.opt,
+                )
+            }
+            Target::Maximize => unsafe {
+                sys::nlopt_set_max_objective(
+                    nlopt.opt,
                     Some(Nlopt::<T>::function_raw_callback),
                     u_data,
-                ),
-            };
-            opt
-        }
+                )
+            }
+        };
+        nlopt
     }
 
     //Static Bounds
@@ -281,39 +284,25 @@ where
     ///Note, however, that some of the algorithms in NLopt, in particular most of the
     ///global-optimization algorithms, do not support unconstrained optimization and will return an
     ///error in `optimize` if you do not supply finite lower and upper bounds.
-    pub fn set_lower_bounds(&mut self, bound: &[f64]) -> Result<i32, i32> {
-        let ret;
-        unsafe {
-            ret = sys::nlopt_set_lower_bounds(self.opt, bound.as_ptr());
-        }
-        match ret {
-            x if x < 0 => Err(x),
-            x => Ok(x),
-        }
+    pub fn set_lower_bounds(&mut self, bound: &[f64]) -> OptResult {
+        result_from_outcome(unsafe {sys::nlopt_set_lower_bounds(self.opt, bound.as_ptr())})
     }
 
     ///See documentation for `set_lower_bounds`
-    pub fn set_upper_bounds(&mut self, bound: &[f64]) -> Result<i32, i32> {
-        let ret;
-        unsafe {
-            ret = sys::nlopt_set_upper_bounds(self.opt, bound.as_ptr());
-        }
-        match ret {
-            x if x < 0 => Err(x),
-            x => Ok(x),
-        }
+    pub fn set_upper_bounds(&mut self, bound: &[f64]) -> OptResult {
+        result_from_outcome(unsafe {sys::nlopt_set_upper_bounds(self.opt, bound.as_ptr())})
     }
 
     ///For convenience, `set_lower_bound` is supplied in order to set the lower
     ///bounds for all optimization parameters to a single constant
-    pub fn set_lower_bound(&mut self, bound: f64) -> Result<i32, i32> {
+    pub fn set_lower_bound(&mut self, bound: f64) -> OptResult {
         let v = vec![bound; self.n_dims];
         self.set_lower_bounds(&v)
     }
 
     ///For convenience, `set_upper_bound` is supplied in order to set the upper
     ///bounds for all optimization parameters to a single constant
-    pub fn set_upper_bound(&mut self, bound: f64) -> Result<i32, i32> {
+    pub fn set_upper_bound(&mut self, bound: f64) -> OptResult {
         let v = vec![bound; self.n_dims];
         self.set_upper_bounds(&v)
     }
@@ -321,8 +310,8 @@ where
     ///Retrieve the current upper bonds on `x`
     pub fn get_upper_bounds(&self) -> Option<&[f64]> {
         let mut bound: Vec<f64> = vec![0.0 as f64; self.n_dims];
+        let b = bound.as_mut_ptr();
         unsafe {
-            let b = bound.as_mut_ptr();
             let ret = sys::nlopt_get_upper_bounds(self.opt, b as *mut f64);
             match ret {
                 x if x < 0 => None,
@@ -334,8 +323,8 @@ where
     ///Retrieve the current lower bonds on `x`
     pub fn get_lower_bounds(&self) -> Option<&[f64]> {
         let mut bound: Vec<f64> = vec![0.0 as f64; self.n_dims];
+        let b = bound.as_mut_ptr();
         unsafe {
-            let b = bound.as_mut_ptr();
             let ret = sys::nlopt_get_lower_bounds(self.opt, b as *mut f64);
             match ret {
                 x if x < 0 => None,
@@ -367,24 +356,23 @@ where
         t: ConstraintType,
         tolerance: f64,
     ) -> OptResult {
-        match t {
+        let outcome = match t {
             ConstraintType::Inequality => unsafe {
-                result_from_outcome(sys::nlopt_add_inequality_constraint(
+                sys::nlopt_add_inequality_constraint(
                     self.opt,
                     Some(Nlopt::<T>::function_raw_callback),
                     Box::into_raw(constraint) as *mut c_void,
                     tolerance,
-                ))
-            },
+                )},
             ConstraintType::Equality => unsafe {
-                result_from_outcome(sys::nlopt_add_equality_constraint(
+                sys::nlopt_add_equality_constraint(
                     self.opt,
                     Some(Nlopt::<T>::function_raw_callback),
                     Box::into_raw(constraint) as *mut c_void,
                     tolerance,
-                ))
-            },
-        }
+                )}
+        };
+        result_from_outcome(outcome)
     }
 
     //UNTESTED
