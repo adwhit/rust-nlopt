@@ -12,6 +12,8 @@ mod nlopt_sys;
 
 use nlopt_sys as sys;
 
+type NLoptOpt = sys::nlopt_opt_s;
+
 ///Defines constants to specify whether the objective function should be minimized or maximized.
 pub enum Target {
     Maximize,
@@ -69,7 +71,51 @@ pub enum Algorithm {
     NumAlgorithms = sys::nlopt_algorithm_NLOPT_NUM_ALGORITHMS,
 }
 
-type NLoptOpt = sys::nlopt_opt_s;
+#[repr(i32)]
+enum FailState {
+    Failure = sys::nlopt_result_NLOPT_FAILURE,
+    InvalidArgs = sys::nlopt_result_NLOPT_INVALID_ARGS,
+    OutOfMemory = sys::nlopt_result_NLOPT_OUT_OF_MEMORY,
+    RoundoffLimited = sys::nlopt_result_NLOPT_ROUNDOFF_LIMITED,
+    ForcedStop = sys::nlopt_result_NLOPT_FORCED_STOP,
+}
+
+#[repr(i32)]
+enum SuccessState {
+    Success = sys::nlopt_result_NLOPT_SUCCESS,
+    StopvalReached = sys::nlopt_result_NLOPT_STOPVAL_REACHED,
+    FtolReached = sys::nlopt_result_NLOPT_FTOL_REACHED,
+    XtolReached = sys::nlopt_result_NLOPT_XTOL_REACHED,
+    MaxevalReached = sys::nlopt_result_NLOPT_MAXEVAL_REACHED,
+    MaxtimeReached = sys::nlopt_result_NLOPT_MAXTIME_REACHED,
+}
+
+fn result_from_outcome(outcome: sys::nlopt_result) -> Result<SuccessState, FailState> {
+    use FailState::*;
+    use SuccessState::*;
+    if outcome < 0 {
+        let err = match outcome {
+            sys::nlopt_result_NLOPT_FAILURE => Failure,
+            sys::nlopt_result_NLOPT_INVALID_ARGS => InvalidArgs,
+            sys::nlopt_result_NLOPT_OUT_OF_MEMORY => OutOfMemory,
+            sys::nlopt_result_NLOPT_ROUNDOFF_LIMITED => RoundoffLimited,
+            sys::nlopt_result_NLOPT_FORCED_STOP => ForcedStop,
+            v => panic!("Unknown fail state {}", v)
+        };
+        Err(err)
+    } else {
+        let ok = match outcome {
+            sys::nlopt_result_NLOPT_SUCCESS => Success,
+            sys::nlopt_result_NLOPT_STOPVAL_REACHED => StopvalReached ,
+            sys::nlopt_result_NLOPT_FTOL_REACHED => FtolReached ,
+            sys::nlopt_result_NLOPT_XTOL_REACHED => XtolReached ,
+            sys::nlopt_result_NLOPT_MAXEVAL_REACHED => MaxevalReached ,
+            sys::nlopt_result_NLOPT_MAXTIME_REACHED => MaxtimeReached ,
+            v => panic!("Unknown success state {}", v)
+        };
+        Ok(ok)
+    }
+}
 
 #[link(name = "nlopt", vers = "0.1.0")]
 extern "C" {
