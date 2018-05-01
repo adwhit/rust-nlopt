@@ -147,51 +147,16 @@ extern "C" fn mfunction_raw_callback<T: Clone>(
     x: *const f64,
     g: *mut f64,
     d: *mut c_void,
-) -> i32 {
+) {
     let f: &MFunction<T> = unsafe { &*(d as *const MFunction<T>) };
+    let re = unsafe { slice::from_raw_parts_mut(re, m as usize) };
     let argument = unsafe { slice::from_raw_parts(x, n as usize) };
-    let gradient: Option<&mut [f64]> = unsafe {
-        if g.is_null() {
-            None
-        } else {
-            Some(slice::from_raw_parts_mut(g, (n as usize) * (m as usize)))
-        }
+    let gradient: Option<&mut [f64]> = if g.is_null() {
+        None
+    } else {
+        Some(unsafe { slice::from_raw_parts_mut(g, (n as usize) * (m as usize)) })
     };
-    match unsafe {
-        ((*f).function)(
-            slice::from_raw_parts_mut(re, m as usize),
-            argument,
-            gradient,
-            (*f).params.clone(),
-        )
-    } {
-        Ok(_) => 1,
-        Err(x) => {
-            println!("Error in mfunction: {}", x);
-            -1
-        }
-    }
-}
-
-
-#[link(name = "nlopt", vers = "0.1.0")]
-extern "C" {
-    fn nlopt_add_inequality_mconstraint(
-        opt: *mut NLoptOpt,
-        m: u32,
-        fc: extern "C" fn(m: u32, r: *mut f64, n: u32, x: *const f64, g: *mut f64, d: *mut c_void)
-            -> i32,
-        d: *const c_void,
-        tol: *const f64,
-    ) -> i32;
-    fn nlopt_add_equality_mconstraint(
-        opt: *mut NLoptOpt,
-        m: u32,
-        fc: extern "C" fn(m: u32, r: *mut f64, n: u32, x: *const f64, g: *mut f64, d: *mut c_void)
-            -> i32,
-        d: *const c_void,
-        tol: *const f64,
-    ) -> i32;
+    ((*f).function)(re, argument, gradient, (*f).params.clone())
 }
 
 /// This is the central ```struct``` of this library. It represents an optimization of a given
@@ -244,13 +209,13 @@ struct Constraint<F> {
 /// `gradient` is `Some(x)`, the user is required to return a valid gradient, otherwise the
 /// optimization will most likely fail.
 /// * `params` - user defined data
-///
-/// # Returns
-/// If an error occurs, the function should return an `Err(x)` where `x` is a string literal
-/// specifying the error. On success, just return `Ok(())`.
+
+// TODO
+// # Returns
+// If an error occurs, the function should return an `Err(x)` where `x` is a string literal
+// specifying the error. On success, just return `Ok(())`.
 pub type NLoptMFn<T> =
-    fn(result: &mut [f64], argument: &[f64], gradient: Option<&mut [f64]>, params: T)
-        -> Result<(), &'static str>;
+    fn(result: &mut [f64], argument: &[f64], gradient: Option<&mut [f64]>, params: T);
 
 /// Packs an `m`-dimensional function of type `NLoptMFn<T>` with a user defined parameter set of type `T`.
 pub struct MFunction<T> {
@@ -296,18 +261,10 @@ where
         let u_data = Box::into_raw(fb) as *mut c_void;
         match target {
             Target::Minimize => unsafe {
-                sys::nlopt_set_min_objective(
-                    nlopt.opt,
-                    Some(function_raw_callback::<T>),
-                    u_data,
-                )
+                sys::nlopt_set_min_objective(nlopt.opt, Some(function_raw_callback::<T>), u_data)
             },
             Target::Maximize => unsafe {
-                sys::nlopt_set_max_objective(
-                    nlopt.opt,
-                    Some(function_raw_callback::<T>),
-                    u_data,
-                )
+                sys::nlopt_set_max_objective(nlopt.opt, Some(function_raw_callback::<T>), u_data)
             },
         };
         nlopt
@@ -462,10 +419,10 @@ where
                 )
             },
             ConstraintType::Equality => unsafe {
-                nlopt_add_equality_mconstraint(
+                sys::nlopt_add_equality_mconstraint(
                     self.opt,
                     m,
-                    mfunction_raw_callback,
+                    Some(mfunction_raw_callback::<T>),
                     Box::into_raw(constraint) as *mut c_void,
                     tolerance.as_ptr(),
                 )
