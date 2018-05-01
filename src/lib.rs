@@ -72,6 +72,7 @@ pub enum Algorithm {
 }
 
 #[repr(i32)]
+#[derive(Debug, Clone, Copy)]
 pub enum FailState {
     Failure = sys::nlopt_result_NLOPT_FAILURE,
     InvalidArgs = sys::nlopt_result_NLOPT_INVALID_ARGS,
@@ -81,6 +82,7 @@ pub enum FailState {
 }
 
 #[repr(i32)]
+#[derive(Debug, Clone, Copy)]
 pub enum SuccessState {
     Success = sys::nlopt_result_NLOPT_SUCCESS,
     StopvalReached = sys::nlopt_result_NLOPT_STOPVAL_REACHED,
@@ -753,10 +755,10 @@ mod tests {
         println!("Initializing optimizer");
         //initialize the optimizer, choose algorithm, dimensions, target function, user parameters
         let mut opt = Nlopt::<f64>::new(
-            NLoptAlgorithm::LD_AUGLAG,
+            Algorithm::LdAuglag,
             10,
             test_objective,
-            NLoptTarget::Minimize,
+            Target::Minimize,
             10.0,
         );
 
@@ -776,7 +778,7 @@ mod tests {
             ConstraintType::Inequality,
             1e-6,
         ) {
-            Err(x) => panic!("Could not add inequality constraint (Err {})", x),
+            Err(x) => panic!("Could not add inequality constraint (Err {:?})", x),
             _ => (),
         };
 
@@ -789,7 +791,7 @@ mod tests {
             ConstraintType::Equality,
             1e-6,
         ) {
-            Err(x) => println!("Could not add equality constraint (Err {})", x),
+            Err(x) => println!("Could not add equality constraint (Err {:?})", x),
             _ => (),
         };
 
@@ -814,10 +816,10 @@ mod tests {
         let (ret, min) = opt.optimize(&mut b);
         match ret {
             Ok(x) => println!(
-                "Optimization succeeded. ret = {}, min = {} @ {:?}",
+                "Optimization succeeded. ret = {:?}, min = {} @ {:?}",
                 x, min, b
             ),
-            Err(x) => println!("Optimization failed. ret = {}, min = {} @ {:?}", x, min, b),
+            Err(x) => println!("Optimization failed. ret = {:?}, min = {} @ {:?}", x, min, b),
         }
     }
 
