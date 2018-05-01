@@ -12,8 +12,6 @@ mod nlopt_sys;
 
 use nlopt_sys as sys;
 
-type NLoptOpt = sys::nlopt_opt_s;
-
 ///Defines constants to specify whether the objective function should be minimized or maximized.
 pub enum Target {
     Maximize,
@@ -121,7 +119,6 @@ fn result_from_outcome(outcome: sys::nlopt_result) -> OptResult {
     }
 }
 
-#[no_mangle]
 extern "C" fn function_raw_callback<T: Clone>(
     n: c_uint,
     x: *const f64,
@@ -141,7 +138,6 @@ extern "C" fn function_raw_callback<T: Clone>(
     ret
 }
 
-#[no_mangle]
 extern "C" fn mfunction_raw_callback<T: Clone>(
     m: u32,
     re: *mut f64,
@@ -169,7 +165,8 @@ extern "C" fn mfunction_raw_callback<T: Clone>(
 pub struct Nlopt<T: Clone> {
     opt: sys::nlopt_opt,
     n_dims: usize,
-    function: ObjectiveFn<T>,
+    #[allow(dead_code)]
+    function: ObjectiveFn<T>,  // TODO is this field necessary?
 }
 
 /// A function `f(x) | R^n --> R` with additional user specified parameters `params` of type `T`.
@@ -197,10 +194,10 @@ pub enum ConstraintType {
     Inequality,
 }
 
-struct Constraint<F> {
-    function: F,
-    ctype: ConstraintType,
-}
+// struct Constraint<F> {
+//     function: F,
+//     ctype: ConstraintType,
+// }
 
 /// A function `f(x) | R^n --> R^m` with additional user specified parameters `params` of type `T`.
 ///
