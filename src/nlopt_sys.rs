@@ -137,15 +137,10 @@ pub const nlopt_result_NLOPT_MAXTIME_REACHED: nlopt_result = 6;
 
 pub type nlopt_result = i32;
 
+#[link(name = "nlopt")]
 extern "C" {
     pub fn nlopt_srand(seed: ::std::os::raw::c_ulong);
-}
-
-extern "C" {
     pub fn nlopt_srand_time();
-}
-
-extern "C" {
     pub fn nlopt_version(
         major: *mut ::std::os::raw::c_int,
         minor: *mut ::std::os::raw::c_int,
@@ -162,116 +157,62 @@ pub struct nlopt_opt_s {
 
 pub type nlopt_opt = *mut nlopt_opt_s;
 
+#[link(name = "nlopt")]
 extern "C" {
     pub fn nlopt_create(algorithm: nlopt_algorithm, n: ::std::os::raw::c_uint) -> nlopt_opt;
-}
-
-extern "C" {
     pub fn nlopt_destroy(opt: nlopt_opt);
-}
-
-// extern "C" {
-//     pub fn nlopt_copy(opt: nlopt_opt) -> nlopt_opt;
-// }
-
-extern "C" {
+    // pub fn nlopt_copy(opt: nlopt_opt) -> nlopt_opt;
     pub fn nlopt_optimize(opt: nlopt_opt, x: *mut f64, opt_f: *mut f64) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_set_min_objective(
         opt: nlopt_opt,
         f: nlopt_func,
         f_data: *mut ::std::os::raw::c_void,
     ) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_set_max_objective(
         opt: nlopt_opt,
         f: nlopt_func,
         f_data: *mut ::std::os::raw::c_void,
     ) -> nlopt_result;
-}
 
-// extern "C" {
-//     pub fn nlopt_set_precond_min_objective(
-//         opt: nlopt_opt,
-//         f: nlopt_func,
-//         pre: nlopt_precond,
-//         f_data: *mut ::std::os::raw::c_void,
-//     ) -> nlopt_result;
-// }
+    // pub fn nlopt_set_precond_min_objective(
+    //     opt: nlopt_opt,
+    //     f: nlopt_func,
+    //     pre: nlopt_precond,
+    //     f_data: *mut ::std::os::raw::c_void,
+    // ) -> nlopt_result;
 
-// extern "C" {
-//     pub fn nlopt_set_precond_max_objective(
-//         opt: nlopt_opt,
-//         f: nlopt_func,
-//         pre: nlopt_precond,
-//         f_data: *mut ::std::os::raw::c_void,
-//     ) -> nlopt_result;
-// }
+    // pub fn nlopt_set_precond_max_objective(
+    //     opt: nlopt_opt,
+    //     f: nlopt_func,
+    //     pre: nlopt_precond,
+    //     f_data: *mut ::std::os::raw::c_void,
+    // ) -> nlopt_result;
 
-// extern "C" {
-//     pub fn nlopt_get_algorithm(opt: nlopt_opt) -> nlopt_algorithm;
-// }
-
-// extern "C" {
-//     pub fn nlopt_get_dimension(opt: nlopt_opt) -> ::std::os::raw::c_uint;
-// }
-
-// extern "C" {
-//     pub fn nlopt_get_errmsg(opt: nlopt_opt) -> *const ::std::os::raw::c_char;
-// }
-
-extern "C" {
+    // pub fn nlopt_get_algorithm(opt: nlopt_opt) -> nlopt_algorithm;
+    // pub fn nlopt_get_dimension(opt: nlopt_opt) -> ::std::os::raw::c_uint;
+    // pub fn nlopt_get_errmsg(opt: nlopt_opt) -> *const ::std::os::raw::c_char;
     pub fn nlopt_set_lower_bounds(opt: nlopt_opt, lb: *const f64) -> nlopt_result;
-}
-
-// extern "C" {
-//     pub fn nlopt_set_lower_bounds1(opt: nlopt_opt, lb: f64) -> nlopt_result;
-// }
-
-extern "C" {
+    // pub fn nlopt_set_lower_bounds1(opt: nlopt_opt, lb: f64) -> nlopt_result;
     pub fn nlopt_get_lower_bounds(opt: nlopt_opt, lb: *mut f64) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_set_upper_bounds(opt: nlopt_opt, ub: *const f64) -> nlopt_result;
-}
-
-// extern "C" {
-//     pub fn nlopt_set_upper_bounds1(opt: nlopt_opt, ub: f64) -> nlopt_result;
-// }
-
-extern "C" {
+    // pub fn nlopt_set_upper_bounds1(opt: nlopt_opt, ub: f64) -> nlopt_result;
     pub fn nlopt_get_upper_bounds(opt: nlopt_opt, ub: *mut f64) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_remove_inequality_constraints(opt: nlopt_opt) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_add_inequality_constraint(
         opt: nlopt_opt,
         fc: nlopt_func,
         fc_data: *mut ::std::os::raw::c_void,
         tol: f64,
     ) -> nlopt_result;
-}
 
-// extern "C" {
-//     pub fn nlopt_add_precond_inequality_constraint(
-//         opt: nlopt_opt,
-//         fc: nlopt_func,
-//         pre: nlopt_precond,
-//         fc_data: *mut ::std::os::raw::c_void,
-//         tol: f64,
-//     ) -> nlopt_result;
-// }
+    // pub fn nlopt_add_precond_inequality_constraint(
+    //     opt: nlopt_opt,
+    //     fc: nlopt_func,
+    //     pre: nlopt_precond,
+    //     fc_data: *mut ::std::os::raw::c_void,
+    //     tol: f64,
+    // ) -> nlopt_result;
 
-extern "C" {
     pub fn nlopt_add_inequality_mconstraint(
         opt: nlopt_opt,
         m: ::std::os::raw::c_uint,
@@ -279,32 +220,22 @@ extern "C" {
         fc_data: *mut ::std::os::raw::c_void,
         tol: *const f64,
     ) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_remove_equality_constraints(opt: nlopt_opt) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_add_equality_constraint(
         opt: nlopt_opt,
         h: nlopt_func,
         h_data: *mut ::std::os::raw::c_void,
         tol: f64,
     ) -> nlopt_result;
-}
 
-// extern "C" {
-//     pub fn nlopt_add_precond_equality_constraint(
-//         opt: nlopt_opt,
-//         h: nlopt_func,
-//         pre: nlopt_precond,
-//         h_data: *mut ::std::os::raw::c_void,
-//         tol: f64,
-//     ) -> nlopt_result;
-// }
+    // pub fn nlopt_add_precond_equality_constraint(
+    //     opt: nlopt_opt,
+    //     h: nlopt_func,
+    //     pre: nlopt_precond,
+    //     h_data: *mut ::std::os::raw::c_void,
+    //     tol: f64,
+    // ) -> nlopt_result;
 
-extern "C" {
     pub fn nlopt_add_equality_mconstraint(
         opt: nlopt_opt,
         m: ::std::os::raw::c_uint,
@@ -312,117 +243,33 @@ extern "C" {
         h_data: *mut ::std::os::raw::c_void,
         tol: *const f64,
     ) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_set_stopval(opt: nlopt_opt, stopval: f64) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_get_stopval(opt: nlopt_opt) -> f64;
-}
-
-extern "C" {
     pub fn nlopt_set_ftol_rel(opt: nlopt_opt, tol: f64) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_get_ftol_rel(opt: nlopt_opt) -> f64;
-}
-
-extern "C" {
     pub fn nlopt_set_ftol_abs(opt: nlopt_opt, tol: f64) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_get_ftol_abs(opt: nlopt_opt) -> f64;
-}
-
-extern "C" {
     pub fn nlopt_set_xtol_rel(opt: nlopt_opt, tol: f64) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_get_xtol_rel(opt: nlopt_opt) -> f64;
-}
-
-// extern "C" {
-//     pub fn nlopt_set_xtol_abs1(opt: nlopt_opt, tol: f64) -> nlopt_result;
-// }
-
-extern "C" {
+    // pub fn nlopt_set_xtol_abs1(opt: nlopt_opt, tol: f64) -> nlopt_result;
     pub fn nlopt_set_xtol_abs(opt: nlopt_opt, tol: *const f64) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_get_xtol_abs(opt: nlopt_opt, tol: *mut f64) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_set_maxeval(opt: nlopt_opt, maxeval: ::std::os::raw::c_int) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_get_maxeval(opt: nlopt_opt) -> ::std::os::raw::c_int;
-}
-
-// extern "C" {
-//     pub fn nlopt_get_numevals(opt: nlopt_opt) -> ::std::os::raw::c_int;
-// }
-
-extern "C" {
+    // pub fn nlopt_get_numevals(opt: nlopt_opt) -> ::std::os::raw::c_int;
     pub fn nlopt_set_maxtime(opt: nlopt_opt, maxtime: f64) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_get_maxtime(opt: nlopt_opt) -> f64;
-}
-
-extern "C" {
     pub fn nlopt_force_stop(opt: nlopt_opt) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_set_force_stop(opt: nlopt_opt, val: ::std::os::raw::c_int) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_get_force_stop(opt: nlopt_opt) -> ::std::os::raw::c_int;
-}
-
-extern "C" {
     pub fn nlopt_set_local_optimizer(opt: nlopt_opt, local_opt: nlopt_opt) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_set_population(opt: nlopt_opt, pop: ::std::os::raw::c_uint) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_get_population(opt: nlopt_opt) -> ::std::os::raw::c_uint;
-}
-
-extern "C" {
     pub fn nlopt_set_vector_storage(opt: nlopt_opt, dim: ::std::os::raw::c_uint) -> nlopt_result;
-}
-
-extern "C" {
     pub fn nlopt_get_vector_storage(opt: nlopt_opt) -> ::std::os::raw::c_uint;
-}
-
-// extern "C" {
-//     pub fn nlopt_set_default_initial_step(opt: nlopt_opt, x: *const f64) -> nlopt_result;
-// }
-
-extern "C" {
+    // pub fn nlopt_set_default_initial_step(opt: nlopt_opt, x: *const f64) -> nlopt_result;
     pub fn nlopt_set_initial_step(opt: nlopt_opt, dx: *const f64) -> nlopt_result;
-}
-
-// extern "C" {
-//     pub fn nlopt_set_initial_step1(opt: nlopt_opt, dx: f64) -> nlopt_result;
-// }
-
-extern "C" {
+    // pub fn nlopt_set_initial_step1(opt: nlopt_opt, dx: f64) -> nlopt_result;
     pub fn nlopt_get_initial_step(opt: nlopt_opt, x: *const f64, dx: *mut f64) -> nlopt_result;
 }
 
