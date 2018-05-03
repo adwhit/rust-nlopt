@@ -57,7 +57,7 @@ pub enum Algorithm {
     LdAuglag = sys::nlopt_algorithm_NLOPT_LD_AUGLAG,
     LnAuglagEq = sys::nlopt_algorithm_NLOPT_LN_AUGLAG_EQ,
     LdAuglagEq = sys::nlopt_algorithm_NLOPT_LD_AUGLAG_EQ,
-    LnBoyqa = sys::nlopt_algorithm_NLOPT_LN_BOBYQA,
+    LnBobyqa = sys::nlopt_algorithm_NLOPT_LN_BOBYQA,
     GnIsres = sys::nlopt_algorithm_NLOPT_GN_ISRES,
     Auglag = sys::nlopt_algorithm_NLOPT_AUGLAG,
     AuglagEq = sys::nlopt_algorithm_NLOPT_AUGLAG_EQ,

@@ -139,7 +139,7 @@ pub const nlopt_result_NLOPT_MAXTIME_REACHED: nlopt_result = 6;
 
 pub type nlopt_result = i32;
 
-#[link(name = "nlopt", kind = "static")]
+#[link(name = "nlopt")]
 extern "C" {
     pub fn nlopt_srand(seed: ::std::os::raw::c_ulong);
     pub fn nlopt_srand_time();
@@ -159,7 +159,7 @@ pub struct nlopt_opt_s {
 
 pub type nlopt_opt = *mut nlopt_opt_s;
 
-#[link(name = "nlopt", kind = "static")]
+#[link(name = "nlopt")]
 extern "C" {
     pub fn nlopt_create(algorithm: nlopt_algorithm, n: ::std::os::raw::c_uint) -> nlopt_opt;
     pub fn nlopt_destroy(opt: nlopt_opt);

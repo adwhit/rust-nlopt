@@ -2,3 +2,6 @@
 name = "nlopt"
 version = "0.1.0"
 authors = ["Lucas L. Treffenstädt <lucas@treffenstaedt.de>", "Jess Fulwood <jesskfulwood@gmail.com>"]
+
+[dev-dependencies]
+num-iter = "0.1.35"

@@ -13,14 +13,3 @@ This is a bit tricky because it's necessary to pass in linker arguments, so
 cargo rustc --tests -- -L /home/alex/repo/nlopt/build
 target/debug/nlopt-<SOME-HASH>
 ```
-
-## Static linking
-
-The recommended way to use this library is to link it statically.
-
-To do this, build `nlopt` normally (with `cmake`), then run
-```
-NLOPT_DIR=/path/to/nlopt/build
-ar -r $NLOPT_DIR/libnlopt.a $NLOPT_DIR/libnlopt.so
-```
-to create an archive. Then
