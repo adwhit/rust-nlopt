@@ -166,7 +166,7 @@ pub struct Nlopt<T: Clone> {
     opt: sys::nlopt_opt,
     n_dims: usize,
     #[allow(dead_code)]
-    function: ObjectiveFn<T>,  // TODO is this field necessary?
+    function: ObjectiveFn<T>, // TODO is this field necessary?
 }
 
 /// A function `f(x) | R^n --> R` with additional user specified parameters `params` of type `T`.
@@ -720,7 +720,7 @@ where
     ///`x_init` is an array of length `n` giving an initial
     ///guess for the optimization parameters. On successful return, `x_init` contains the optimized values
     ///of the parameters, and the function returns the corresponding value of the objective function.
-    pub fn optimize(&self, x_init: &mut [f64]) -> (OptResult, f64) {
+    pub fn optimize(&self, x_init: &mut [f64]) -> Result<(SuccessState, f64), (FailState, f64)> {
         unsafe {
             let mut min_value: f64 = 0.0;
             (
@@ -728,8 +728,7 @@ where
                     self.opt,
                     x_init.as_mut_ptr(),
                     &mut min_value,
-                )),
-                min_value,
+                )).map(|s| (s, min_value)).map_err(|e| (e, min_value))
             )
         }
     }
@@ -816,7 +815,10 @@ mod tests {
                 "Optimization succeeded. ret = {:?}, min = {} @ {:?}",
                 x, min, b
             ),
-            Err(x) => println!("Optimization failed. ret = {:?}, min = {} @ {:?}", x, min, b),
+            Err(x) => println!(
+                "Optimization failed. ret = {:?}, min = {} @ {:?}",
+                x, min, b
+            ),
         }
     }
 
