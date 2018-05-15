@@ -808,16 +808,17 @@ mod tests {
 
         println!("Start optimization...");
         //do the actual optimization
+        let min = 1;
         let mut b: Vec<f64> = vec![100.0; opt.n_dims];
-        let (ret, min) = opt.optimize(&mut b);
+        let ret = opt.optimize(&mut b);
         match ret {
-            Ok(x) => println!(
+            Ok((s, min)) => println!(
                 "Optimization succeeded. ret = {:?}, min = {} @ {:?}",
-                x, min, b
+                s, min, b
             ),
-            Err(x) => println!(
+            Err((e, min)) => println!(
                 "Optimization failed. ret = {:?}, min = {} @ {:?}",
-                x, min, b
+                e, min, b
             ),
         }
     }
