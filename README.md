@@ -1,8 +1,8 @@
 # nlopt
 
-This Rust crate is a thin wrapper around the C `nlopt` library.
+Thin wrapper around the C [`nlopt`](https://nlopt.readthedocs.io/en/latest/) library.
 
-Before running, make sure that libnlopt.so is on your `LD_LIBRARY_PATH`.
+Note: Has not been extensively tested.
 
 ## Building
 
