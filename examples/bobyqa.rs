@@ -1,16 +1,19 @@
 extern crate nlopt;
 extern crate num_iter;
 
+// this example is adapted from the original bobyqa source
+// at http://mat.uc.pt/~zhang/software.html
+
 use nlopt::*;
 use num_iter::*;
 
 use std::f64::consts::PI;
 
 fn main() {
-    bobyqa_test()
+    bobyqa_example()
 }
 
-fn objfn(x: &[f64], _gradient: Option<&mut [f64]>, params: ()) -> f64 {
+fn objfn(x: &[f64], _gradient: Option<&mut [f64]>, _params: ()) -> f64 {
     let mut f = 0.0;
     for i in range_step_inclusive(4, x.len(), 2) {
         let j1 = i - 2;
@@ -24,13 +27,8 @@ fn objfn(x: &[f64], _gradient: Option<&mut [f64]>, params: ()) -> f64 {
     f
 }
 
-fn bobyqa_test() {
+fn bobyqa_example() {
     let twopi = 2.0 * PI;
-
-    /* Local variables. */
-    // REAL bdl, bdu, rhobeg, rhoend, temp;
-    // REAL w[500000], x[100], xl[100], xu[100];
-    // INTEGER i, iprint, j, jcase, m, maxfun;
 
     let mut x = [0.0; 100];
     let mut xl = [0.0; 100];
@@ -38,10 +36,7 @@ fn bobyqa_test() {
 
     let bdl = -1.0;
     let bdu = 1.0;
-    let iprint = 2;
-    let maxfun = 500000;
-    let rhobeg = 0.1;
-    let rhoend = 1e-6;
+
     for &m in &[5, 10] {
         let q = twopi / m as f64;
         let n = 2 * m;
@@ -51,24 +46,20 @@ fn bobyqa_test() {
         }
         for &jcase in &[1, 2] {
             let npt = if jcase == 2 { 2 * n + 1 } else { n + 6 };
-            println!(
-                "\n\n     2D output with M ={},  N ={}  and  NPT ={}\n",
-                m, n, npt
-            );
+            println!("2D output with M={}, N={} and NPT={}", m, n, npt);
             for j in 1..=m {
                 let temp = (j as f64) * q;
                 x[2 * j - 2] = temp.cos();
                 x[2 * j - 1] = temp.sin();
             }
-            let mut opt = Nlopt::new(Algorithm::LnBobyqa, n, objfn, Target::Minimize, ());
-            opt.set_lower_bounds(&xl);
-            opt.set_upper_bounds(&xu);
+            let mut opt = Nlopt::new(Algorithm::Bobyqa, n, objfn, Target::Minimize, ());
+            opt.set_lower_bounds(&xl).unwrap();
+            opt.set_upper_bounds(&xu).unwrap();
+            opt.set_xtol_rel(1e-6).unwrap();
 
             let res = opt.optimize(&mut x);
             println!("Result: {:?}", res);
-            println!("X vals: {:?}", &x[..n]);
-            // bobyqa(n, npt, objfun_test, NULL, x, xl, xu, rhobeg, rhoend,
-            //        iprint, maxfun, w);
+            println!("X vals: {:?}\n", &x[..n]);
         }
     }
 }

@@ -842,6 +842,7 @@ mod tests {
         println!("Using nlopt version {}.{}.{}", x, y, z);
 
         println!("Start optimization...");
+
         //do the actual optimization
         let mut b: Vec<f64> = vec![100.0; opt.n_dims];
         let ret = opt.optimize(&mut b);
