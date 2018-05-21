@@ -1,7 +1,8 @@
 //! # nlopt
 //!
-//! This is a wrapper for the NLopt library (http://ab-initio.mit.edu/wiki/index.php/NLopt).
-//! Study first the documentation for the `Nlopt` `struct` to get started.
+//! This is a wrapper for `nlopt`, a collection of useful optimization
+//! algorithms written in C. For details of the various algorithms,
+//! consult the [nlopt docs](https://nlopt.readthedocs.io/en/latest/NLopt_Algorithms/)
 
 use std::os::raw::{c_uint, c_ulong, c_void};
 use std::slice;
@@ -71,8 +72,9 @@ pub enum Algorithm {
     LnAuglagEq = sys::nlopt_algorithm_NLOPT_LN_AUGLAG_EQ,
 
     Ccsaq = sys::nlopt_algorithm_NLOPT_LD_CCSAQ,
-    NumAlgorithms = sys::nlopt_algorithm_NLOPT_NUM_ALGORITHMS,
 }
+
+pub static NUM_ALGORTITHMS: u32 = sys::nlopt_algorithm_NLOPT_NUM_ALGORITHMS;
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy)]
@@ -728,13 +730,12 @@ where
     pub fn optimize(&self, x_init: &mut [f64]) -> Result<(SuccessState, f64), (FailState, f64)> {
         unsafe {
             let mut min_value: f64 = 0.0;
-            (
-                result_from_outcome(sys::nlopt_optimize(
-                    self.opt,
-                    x_init.as_mut_ptr(),
-                    &mut min_value,
-                )).map(|s| (s, min_value)).map_err(|e| (e, min_value))
-            )
+            (result_from_outcome(sys::nlopt_optimize(
+                self.opt,
+                x_init.as_mut_ptr(),
+                &mut min_value,
+            )).map(|s| (s, min_value))
+                .map_err(|e| (e, min_value)))
         }
     }
 }
@@ -747,20 +748,22 @@ impl<T: Clone> Drop for Nlopt<T> {
     }
 }
 
-pub fn approximate_gradient(x0: &mut [f64], f: fn(&[f64]) -> f64) -> Vec<f64> {
+/// Calculate gradient of function numerically. Can be useful when a gradient must
+/// be provided to the optimization algorithm and a closed form derivative cannot
+/// be obtained
+pub fn approximate_gradient(x0: &[f64], f: fn(&[f64]) -> f64, grad: &mut [f64]) {
     let n = x0.len();
-    let eps = std::f64::EPSILON.powf(1.0/3.0);
-    let mut grad = vec![0.0; n];
+    let mut x0 = x0.to_vec();
+    let eps = std::f64::EPSILON.powf(1.0 / 3.0);
     for i in 0..n {
         let x0i = x0[i];
         x0[i] = x0i - eps;
-        let fl = f(x0);
+        let fl = f(&x0);
         x0[i] = x0i + eps;
-        let fh = f(x0);
+        let fh = f(&x0);
         grad[i] = (fh - fl) / (2.0 * eps);
         x0[i] = x0i;
     }
-    grad
 }
 
 #[cfg(test)]
@@ -773,12 +776,59 @@ mod tests {
             x.iter().map(|v| v * v).sum()
         }
 
-        let mut x0 = vec![0., 1., 6.];
-        let g = approximate_gradient(&mut x0, square);
+        let x0 = vec![0., 1., 6.];
+        let mut grad = vec![0.; 3];
+        approximate_gradient(&x0, square, &mut grad);
         let expect = vec![0., 2., 12.];
-        for (r, e) in g.iter().zip(expect.iter()) {
+        for (r, e) in grad.iter().zip(expect.iter()) {
             assert!((r - e).abs() < 0.0000001)
         }
+    }
+
+    #[test]
+    fn test_lbfgs() {
+        // Taken from `nloptr` docs
+        fn flb(x: &[f64]) -> f64 {
+            let p = x.len();
+            Some(1.0)
+                .into_iter()
+                .chain(std::iter::repeat(4.0))
+                .take(p)
+                .zip(
+                    x.iter()
+                        .zip(Some(1.0).into_iter().chain(x.iter().cloned()).take(p))
+                        .map(|(x, xd)| (x - xd.powi(2)).powi(2)),
+                )
+                .map(|(fst, snd)| fst * snd)
+                .sum()
+        }
+
+        fn objfn(x: &[f64], grad: Option<&mut [f64]>, _params: ()) -> f64 {
+            let grad = grad.unwrap();
+            approximate_gradient(x, flb, grad);
+            flb(x)
+        }
+
+        let mut opt = Nlopt::<()>::new(Algorithm::Lbfgs, 25, objfn, Target::Minimize, ());
+
+        let mut x0 = vec![3.0; 25];
+        let xl = vec![2.0; 25];
+        let xu = vec![4.0; 25];
+
+        opt.set_upper_bounds(&xu).unwrap();
+        opt.set_lower_bounds(&xl).unwrap();
+        opt.set_lower_bounds(&xl).unwrap();
+        opt.set_xtol_rel(1e-8).unwrap();
+
+        let mut expect = vec![2.0; 25];
+        expect[23] = 2.1090933511928247;
+        expect[24] = 4.;
+
+        match opt.optimize(&mut x0) {
+            Ok((_, v)) => assert_eq!(v, 368.10591287433397),
+            Err((e, _)) => panic!(e),
+        }
+        assert_eq!(&x0, &expect);
     }
 
     #[test]
