@@ -747,16 +747,46 @@ impl<T: Clone> Drop for Nlopt<T> {
     }
 }
 
+pub fn approximate_gradient(x0: &mut [f64], f: fn(&[f64]) -> f64) -> Vec<f64> {
+    let n = x0.len();
+    let eps = std::f64::EPSILON.powf(1.0/3.0);
+    let mut grad = vec![0.0; n];
+    for i in 0..n {
+        let x0i = x0[i];
+        x0[i] = x0i - eps;
+        let fl = f(x0);
+        x0[i] = x0i + eps;
+        let fh = f(x0);
+        grad[i] = (fh - fl) / (2.0 * eps);
+        x0[i] = x0i;
+    }
+    grad
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
+    fn test_approx_gradient() {
+        fn square(x: &[f64]) -> f64 {
+            x.iter().map(|v| v * v).sum()
+        }
+
+        let mut x0 = vec![0., 1., 6.];
+        let g = approximate_gradient(&mut x0, square);
+        let expect = vec![0., 2., 12.];
+        for (r, e) in g.iter().zip(expect.iter()) {
+            assert!((r - e).abs() < 0.0000001)
+        }
+    }
+
+    #[test]
+    fn test_auglag() {
         println!("Initializing optimizer");
         //initialize the optimizer, choose algorithm, dimensions, target function, user parameters
         let mut opt = Nlopt::<f64>::new(
-            Algorithm::LdAuglag,
+            Algorithm::Auglag,
             10,
             test_objective,
             Target::Minimize,
@@ -813,7 +843,6 @@ mod tests {
 
         println!("Start optimization...");
         //do the actual optimization
-        let min = 1;
         let mut b: Vec<f64> = vec![100.0; opt.n_dims];
         let ret = opt.optimize(&mut b);
         match ret {
