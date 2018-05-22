@@ -196,18 +196,8 @@ pub struct Function<T> {
     pub params: T,
 }
 
-/// Defines constants for equality constraints (of the form `f(x) = 0`) and inequality constraints
-/// (of the form `f(x) <= 0`).
-pub enum ConstraintType {
-    Equality,
-    Inequality,
-}
-
-// TODO
-// struct Constraint<F> {
-//     function: F,
-//     ctype: ConstraintType,
-// }
+pub type ConstraintFn<T> = ObjectiveFn<T>;
+pub type Constraint<T> = Function<T>;
 
 /// A function `f(x) | R^n --> R^m` with additional user specified parameters `params` of type `T`.
 ///
@@ -218,7 +208,6 @@ pub enum ConstraintType {
 /// `gradient` is `Some(x)`, the user is required to return a valid gradient, otherwise the
 /// optimization will most likely fail.
 /// * `params` - user defined data
-
 pub type MObjectiveFn<T> =
     fn(result: &mut [f64], argument: &[f64], gradient: Option<&mut [f64]>, params: &mut T);
 
@@ -272,10 +261,18 @@ where
         let u_data = Box::into_raw(fb) as *mut c_void;
         match target {
             Target::Minimize => unsafe {
-                sys::nlopt_set_min_objective(nlopt.nloptc_obj, Some(function_raw_callback::<T>), u_data)
+                sys::nlopt_set_min_objective(
+                    nlopt.nloptc_obj,
+                    Some(function_raw_callback::<T>),
+                    u_data,
+                )
             },
             Target::Maximize => unsafe {
-                sys::nlopt_set_max_objective(nlopt.nloptc_obj, Some(function_raw_callback::<T>), u_data)
+                sys::nlopt_set_max_objective(
+                    nlopt.nloptc_obj,
+                    Some(function_raw_callback::<T>),
+                    u_data,
+                )
             },
         };
         nlopt
@@ -364,10 +361,9 @@ where
     /// (ISRES and AUGLAG). For these algorithms, you can specify as many nonlinear constraints as
     /// you wish.
     ///
-    /// In particular, a nonlinear constraint of the form `fc(x) ≤ 0` or `fc(x) = 0`, where the function
+    /// In particular, a nonlinear constraint of the form `fc(x) = 0`, where the function
     /// fc is an `ObjectiveFn<T>`, can be specified by calling this function.
     ///
-    /// * `t` - Specify whether the constraint is an equality (`fc(x) = 0`) or inequality (`fc(x) ≤ 0`) constraint.
     /// * `tolerance` - This parameter is a tolerance
     /// that is used for the purpose of stopping criteria only: a point `x` is considered feasible for
     /// judging whether to stop the optimization if `fc(x) ≤ tol`. A tolerance of zero means that
@@ -375,31 +371,46 @@ where
     /// satisfied;
     /// generally, at least a small positive tolerance is advisable to reduce sensitivity to
     /// rounding errors.
-    pub fn add_constraint(
+    pub fn add_equality_constraint<C>(
         &mut self,
-        constraint: Box<Function<T>>,
-        t: ConstraintType,
+        constraint: ConstraintFn<C>,
+        constraint_params: C,
         tolerance: f64,
     ) -> OptResult {
-        let outcome = match t {
-            ConstraintType::Inequality => unsafe {
-                sys::nlopt_add_inequality_constraint(
-                    self.nloptc_obj,
-                    Some(function_raw_callback::<T>),
-                    Box::into_raw(constraint) as *mut c_void,
-                    tolerance,
-                )
-            },
-            ConstraintType::Equality => unsafe {
-                sys::nlopt_add_equality_constraint(
-                    self.nloptc_obj,
-                    Some(function_raw_callback::<T>),
-                    Box::into_raw(constraint) as *mut c_void,
-                    tolerance,
-                )
-            },
+        let constraint = Constraint {
+            function: constraint,
+            params: constraint_params,
         };
-        result_from_outcome(outcome)
+        result_from_outcome(unsafe {
+            sys::nlopt_add_equality_constraint(
+                self.nloptc_obj,
+                Some(function_raw_callback::<T>),
+                Box::into_raw(Box::new(constraint)) as *mut c_void,
+                tolerance,
+            )
+        })
+    }
+
+    /// Set a nonlinear constraint of the form `fc(x) ≤ 0`.
+    /// For more information see the documentation for `add_equality_constraint`.
+    pub fn add_inequality_constraint<C>(
+        &mut self,
+        constraint: ConstraintFn<C>,
+        constraint_params: C,
+        tolerance: f64,
+    ) -> OptResult {
+        let constraint = Constraint {
+            function: constraint,
+            params: constraint_params,
+        };
+        result_from_outcome(unsafe {
+            sys::nlopt_add_inequality_constraint(
+                self.nloptc_obj,
+                Some(function_raw_callback::<T>),
+                Box::into_raw(Box::new(constraint)) as *mut c_void,
+                tolerance,
+            )
+        })
     }
 
     // TODO untested
@@ -407,41 +418,45 @@ where
     /// function that returns the values (and gradients) of all constraints at once. For example,
     /// different constraint functions might share computations in some way. Or, if you have a large
     /// number of constraints, you may wish to compute them in parallel. This possibility is
-    /// supported by this function, which defines multiple constraints at once, or
+    /// supported by this function, which defines multiple equality constraints at once, or
     /// equivalently a vector-valued constraint function `fc(x) | R^n --> R^m`:
     ///
-    /// * `constraint` - A `Box` containing the constraint function bundled with user defined
-    ///  parameters.
-    /// * `t` - Specify whether the constraint is an equality or inequality constraint
+    /// * `constraint` - A constraint function bundled with user defined parameters.
     /// * `tolerance` - An array slice of length `m` of the tolerances in each constraint dimension
-    pub fn add_mconstraint(
+    pub fn add_equality_mconstraint(
+        &mut self,
+        constraint: MFunction<T>,
+        tolerance: &[f64],
+    ) -> OptResult {
+        let m: u32 = constraint.m as u32;
+        result_from_outcome(unsafe {
+            sys::nlopt_add_equality_mconstraint(
+                self.nloptc_obj,
+                m,
+                Some(mfunction_raw_callback::<T>),
+                Box::into_raw(Box::new(constraint)) as *mut c_void,
+                tolerance.as_ptr(),
+            )
+        })
+    }
+
+    /// Set a nonlinear multivalue inequality constraint.
+    /// For more information see the documentation for `add_equality_mconstraint`.
+    pub fn add_inequality_mconstraint(
         &mut self,
         constraint: Box<MFunction<T>>,
-        t: ConstraintType,
         tolerance: &[f64],
     ) -> OptResult {
         let m: u32 = (*constraint).m as u32;
-        let outcome = match t {
-            ConstraintType::Inequality => unsafe {
-                sys::nlopt_add_inequality_mconstraint(
-                    self.nloptc_obj,
-                    m,
-                    Some(mfunction_raw_callback::<T>),
-                    Box::into_raw(constraint) as *mut c_void,
-                    tolerance.as_ptr(),
-                )
-            },
-            ConstraintType::Equality => unsafe {
-                sys::nlopt_add_equality_mconstraint(
-                    self.nloptc_obj,
-                    m,
-                    Some(mfunction_raw_callback::<T>),
-                    Box::into_raw(constraint) as *mut c_void,
-                    tolerance.as_ptr(),
-                )
-            },
-        };
-        result_from_outcome(outcome)
+        result_from_outcome(unsafe {
+            sys::nlopt_add_inequality_mconstraint(
+                self.nloptc_obj,
+                m,
+                Some(mfunction_raw_callback::<T>),
+                Box::into_raw(Box::new(constraint)) as *mut c_void,
+                tolerance.as_ptr(),
+            )
+        })
     }
 
     // TODO untested
@@ -620,7 +635,9 @@ where
     /// objective function, bounds, and nonlinear-constraint parameters of `local_opt` are ignored.)
     /// The dimension `n` of `local_opt` must match that of the main optimization.
     pub fn set_local_optimizer(&mut self, local_opt: Nlopt<T>) -> OptResult {
-        result_from_outcome(unsafe { sys::nlopt_set_local_optimizer(self.nloptc_obj, local_opt.nloptc_obj) })
+        result_from_outcome(unsafe {
+            sys::nlopt_set_local_optimizer(self.nloptc_obj, local_opt.nloptc_obj)
+        })
     }
 
     // Initial Step Size
@@ -668,7 +685,9 @@ where
     /// changed by calling this function. A `population` of zero implies
     /// that the heuristic default will be used.
     pub fn set_population(&mut self, population: usize) -> OptResult {
-        result_from_outcome(unsafe { sys::nlopt_set_population(self.nloptc_obj, population as u32) })
+        result_from_outcome(unsafe {
+            sys::nlopt_set_population(self.nloptc_obj, population as u32)
+        })
     }
 
     pub fn get_population(&mut self) -> usize {
@@ -738,7 +757,8 @@ where
     /// of the parameters, and the function returns the corresponding value of the objective function.
     pub fn optimize(&self, x_init: &mut [f64]) -> Result<(SuccessState, f64), (FailState, f64)> {
         let mut min_value: f64 = 0.0;
-        let res = unsafe { sys::nlopt_optimize(self.nloptc_obj, x_init.as_mut_ptr(), &mut min_value) };
+        let res =
+            unsafe { sys::nlopt_optimize(self.nloptc_obj, x_init.as_mut_ptr(), &mut min_value) };
         result_from_outcome(res)
             .map(|s| (s, min_value))
             .map_err(|e| (e, min_value))

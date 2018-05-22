@@ -24,27 +24,13 @@ fn auglag_example() {
     };
 
     println!("Adding inequality constraint");
-    match opt.add_constraint(
-        Box::new(Function::<f64> {
-            function: example_inequality_constraint,
-            params: 120.0,
-        }),
-        ConstraintType::Inequality,
-        1e-6,
-    ) {
+    match opt.add_inequality_constraint(example_inequality_constraint, 120.0, 1e-6) {
         Err(x) => panic!("Could not add inequality constraint (Err {:?})", x),
         _ => (),
     };
 
     println!("Adding equality constraint");
-    match opt.add_constraint(
-        Box::new(Function::<f64> {
-            function: example_equality_constraint,
-            params: 20.0,
-        }),
-        ConstraintType::Equality,
-        1e-6,
-    ) {
+    match opt.add_equality_constraint(example_equality_constraint, 20.0, 1e-6) {
         Err(x) => println!("Could not add equality constraint (Err {:?})", x),
         _ => (),
     };
@@ -75,8 +61,9 @@ fn auglag_example() {
             s, min, b
         ),
         Err((e, min)) => panic!(
-                "Optimization failed. ret = {:?}, min = {} @ {:?}",
-                e, min, b)
+            "Optimization failed. ret = {:?}, min = {} @ {:?}",
+            e, min, b
+        ),
     }
 }
 
