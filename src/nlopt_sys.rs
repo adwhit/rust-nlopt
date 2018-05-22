@@ -118,6 +118,7 @@ pub const nlopt_algorithm_NLOPT_G_MLSL_LDS: nlopt_algorithm = 39;
 pub const nlopt_algorithm_NLOPT_LD_SLSQP: nlopt_algorithm = 40;
 pub const nlopt_algorithm_NLOPT_LD_CCSAQ: nlopt_algorithm = 41;
 pub const nlopt_algorithm_NLOPT_GN_ESCH: nlopt_algorithm = 42;
+#[allow(dead_code)]
 pub const nlopt_algorithm_NLOPT_NUM_ALGORITHMS: nlopt_algorithm = 43;
 pub type nlopt_algorithm = u32;
 

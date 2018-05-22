@@ -74,8 +74,6 @@ pub enum Algorithm {
     Ccsaq = sys::nlopt_algorithm_NLOPT_LD_CCSAQ,
 }
 
-pub static NUM_ALGORTITHMS: u32 = sys::nlopt_algorithm_NLOPT_NUM_ALGORITHMS;
-
 #[repr(i32)]
 #[derive(Debug, Clone, Copy)]
 pub enum FailState {
@@ -191,13 +189,13 @@ pub struct Nlopt<T: Clone> {
 pub type ObjectiveFn<T> = fn(argument: &[f64], gradient: Option<&mut [f64]>, params: &mut T) -> f64;
 
 /// Packs a function of type `ObjectiveFn<T>` with a user defined parameter set of type `T`.
-pub struct Function<T> {
+struct Function<T> {
     pub function: ObjectiveFn<T>,
     pub params: T,
 }
 
 pub type ConstraintFn<T> = ObjectiveFn<T>;
-pub type Constraint<T> = Function<T>;
+type Constraint<T> = Function<T>;
 
 /// A function `f(x) | R^n --> R^m` with additional user specified parameters `params` of type `T`.
 ///
@@ -211,6 +209,7 @@ pub type Constraint<T> = Function<T>;
 pub type MObjectiveFn<T> =
     fn(result: &mut [f64], argument: &[f64], gradient: Option<&mut [f64]>, params: &mut T);
 
+// TODO this should be a private type but leaks due to setter fn
 /// Packs an `m`-dimensional function of type `NLoptMFn<T>` with a user defined parameter set of type `T`.
 pub struct MFunction<T> {
     m: usize,
@@ -278,7 +277,6 @@ where
         nlopt
     }
 
-    // Static Bounds
     /// Most of the algorithms in NLopt are designed for minimization of functions with simple bound
     /// constraints on the inputs. That is, the input vectors `x` are constrainted to lie in a
     /// hyperrectangle `lower_bound[i] ≤ x[i] ≤ upper_bound[i] for 0 ≤ i < n`.
@@ -355,7 +353,6 @@ where
         }
     }
 
-    //Nonlinear Constraints
     /// Several of the algorithms in NLopt (MMA, COBYLA, and ORIG_DIRECT) also support arbitrary
     /// nonlinear inequality constraints, and some additionally allow nonlinear equality constraints
     /// (ISRES and AUGLAG). For these algorithms, you can specify as many nonlinear constraints as
@@ -428,6 +425,7 @@ where
         constraint: MFunction<T>,
         tolerance: &[f64],
     ) -> OptResult {
+        // TODO MFunction should be private type
         let m: u32 = constraint.m as u32;
         result_from_outcome(unsafe {
             sys::nlopt_add_equality_mconstraint(
@@ -444,10 +442,11 @@ where
     /// For more information see the documentation for `add_equality_mconstraint`.
     pub fn add_inequality_mconstraint(
         &mut self,
-        constraint: Box<MFunction<T>>,
+        constraint: MFunction<T>,
         tolerance: &[f64],
     ) -> OptResult {
-        let m: u32 = (*constraint).m as u32;
+        // TODO MFunction should be private type
+        let m: u32 = constraint.m as u32;
         result_from_outcome(unsafe {
             sys::nlopt_add_inequality_mconstraint(
                 self.nloptc_obj,
@@ -470,7 +469,6 @@ where
         })
     }
 
-    // Stopping Criteria
     /// Multiple stopping criteria for the optimization are supported,
     /// as specified by the functions to modify a given optimization problem. The optimization
     /// halts whenever any one of these criteria is satisfied. In some cases, the precise
@@ -593,8 +591,6 @@ where
         }
     }
 
-    //Forced Termination
-
     /// In certain cases, the caller may wish to force the optimization to halt, for some reason
     /// unknown to NLopt. For example, if the user presses Ctrl-C, or there is an error of some
     /// sort in the objective function. In this case, it is possible to tell NLopt to halt
@@ -625,7 +621,6 @@ where
         }
     }
 
-    // Local Optimization
     /// Some of the algorithms, especially MLSL and AUGLAG, use a different optimization algorithm
     /// as a subroutine, typically for local optimization. You can change the local search algorithm
     /// and its tolerances using this function.
@@ -640,7 +635,6 @@ where
         })
     }
 
-    // Initial Step Size
     /// For derivative-free local-optimization algorithms, the optimizer must somehow decide on some
     /// initial step size to perturb x by when it begins the optimization. This step size should be
     /// big enough that the value of the objective changes significantly, but not too big if you
@@ -734,7 +728,6 @@ where
     // Preconditioning TODO --> this is somewhat complex but not overly so.
     // Just did not get around to it yet.
 
-    // Version Number
     /// To determine the version number of NLopt at runtime, you can call this function. For
     /// example, NLopt version 3.1.4 would return `(3, 1, 4)`.
     pub fn version() -> (i32, i32, i32) {
@@ -746,8 +739,6 @@ where
             (i, j, k)
         }
     }
-
-    // NLopt Refernce: http://ab-initio.mit.edu/wiki/index.php/NLopt_Reference
 
     /// Once all of the desired optimization parameters have been specified in a given
     /// `NLoptOptimzer`, you can perform the optimization by calling this function. On input,
@@ -773,9 +764,9 @@ impl<T: Clone> Drop for Nlopt<T> {
     }
 }
 
-/// Calculate gradient of function numerically. Can be useful when a gradient must
-/// be provided to the optimization algorithm and a closed form derivative cannot
-/// be obtained
+/// Helper function to calculate gradient of function numerically.
+/// Can be useful when a gradient must be provided to the optimization
+/// algorithm and a closed-form derivative cannot be obtained
 pub fn approximate_gradient(x0: &[f64], f: fn(&[f64]) -> f64, grad: &mut [f64]) {
     let n = x0.len();
     let mut x0 = x0.to_vec();
