@@ -855,4 +855,34 @@ mod tests {
         }
         assert_eq!(&x0, &expect);
     }
+
+    #[test]
+    fn test_auglag() {
+        // Test adapted from nloptr docs
+
+        fn objfn(x: &[f64], _grad: Option<&mut [f64]>, _params: &mut ()) -> f64 {
+            (x[0] - 2.0).powi(2) + (x[1] - 1.0).powi(2)
+        }
+
+        fn hin(x: &[f64], _grad: Option<&mut [f64]>, _params: &mut ()) -> f64 {
+            0.25 * x[0].powi(2) + x[1].powi(2) - 1.
+        }
+
+        fn heq(x: &[f64], _grad: Option<&mut [f64]>, _params: &mut ()) -> f64 {
+            x[0] - 2.0 * x[1] + 1.
+        }
+
+        let mut opt = Nlopt::new(Algorithm::Auglag, 2, objfn, Target::Minimize, ());
+        opt.add_inequality_constraint(hin, (), 1e-6).unwrap();
+        opt.add_equality_constraint(heq, (), 1e-6).unwrap();
+        opt.set_xtol_rel(1e-6).unwrap();
+
+        let mut inner_opt = Nlopt::new(Algorithm::Cobyla, 2, objfn, Target::Minimize, ());
+        inner_opt.set_xtol_rel(1e-6).unwrap();
+        opt.set_local_optimizer(inner_opt).unwrap();
+
+        let mut input = vec![1., 1.];
+        let (_s, v) = opt.optimize(&mut input).unwrap();
+        assert_eq!(v, 1.3934640682303436);
+    }
 }
