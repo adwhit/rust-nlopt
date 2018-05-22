@@ -13,7 +13,7 @@ fn main() {
     bobyqa_example()
 }
 
-fn objfn(x: &[f64], _gradient: Option<&mut [f64]>, _params: ()) -> f64 {
+fn objfn(x: &[f64], _gradient: Option<&mut [f64]>, _params: &mut ()) -> f64 {
     let mut f = 0.0;
     for i in range_step_inclusive(4, x.len(), 2) {
         let j1 = i - 2;

@@ -80,19 +80,19 @@ fn auglag_example() {
     }
 }
 
-fn example_objective(a: &[f64], g: Option<&mut [f64]>, param: f64) -> f64 {
+fn example_objective(a: &[f64], g: Option<&mut [f64]>, param: &mut f64) -> f64 {
     match g {
         Some(x) => {
-            for (target, value) in (*x).iter_mut().zip(a.iter().map(|f| (f - param) * 2.0)) {
+            for (target, value) in (*x).iter_mut().zip(a.iter().map(|f| (f - *param) * 2.0)) {
                 *target = value;
             }
         }
         None => (),
     }
-    a.iter().map(|x| (x - param) * (x - param)).sum()
+    a.iter().map(|x| (x - *param) * (x - *param)).sum()
 }
 
-fn example_inequality_constraint(a: &[f64], g: Option<&mut [f64]>, param: f64) -> f64 {
+fn example_inequality_constraint(a: &[f64], g: Option<&mut [f64]>, param: &mut f64) -> f64 {
     match g {
         Some(x) => {
             for (index, mut value) in x.iter_mut().enumerate() {
@@ -104,10 +104,10 @@ fn example_inequality_constraint(a: &[f64], g: Option<&mut [f64]>, param: f64) -
         }
         None => (),
     };
-    param - a[5]
+    *param - a[5]
 }
 
-fn example_equality_constraint(a: &[f64], g: Option<&mut [f64]>, param: f64) -> f64 {
+fn example_equality_constraint(a: &[f64], g: Option<&mut [f64]>, param: &mut f64) -> f64 {
     match g {
         Some(x) => {
             for (index, mut value) in x.iter_mut().enumerate() {
@@ -119,5 +119,5 @@ fn example_equality_constraint(a: &[f64], g: Option<&mut [f64]>, param: f64) -> 
         }
         None => (),
     };
-    param - a[4]
+    *param - a[4]
 }
