@@ -14,6 +14,7 @@ mod nlopt_sys;
 use nlopt_sys as sys;
 
 /// Target object function state
+#[derive(Debug, Clone, Copy)]
 pub enum Target {
     Maximize,
     Minimize,
@@ -131,8 +132,8 @@ extern "C" fn function_raw_callback<F, T>(
     g: *mut f64,
     params: *mut c_void,
 ) -> f64
-    where
-          F: Fn(&[f64], Option<&mut [f64]>, &mut T) -> f64,
+where
+    F: Fn(&[f64], Option<&mut [f64]>, &mut T) -> f64,
 {
     // recover Function object from supplied params
     let f = unsafe { &mut *(params as *mut FunctionCfg<F, T>) };
@@ -146,6 +147,27 @@ extern "C" fn function_raw_callback<F, T>(
     };
 
     // call
+    (f.objective_fn)(argument, gradient, &mut f.user_data)
+}
+
+extern "C" fn constraint_raw_callback<F, T>(
+    n: c_uint,
+    x: *const f64,
+    g: *mut f64,
+    params: *mut c_void,
+) -> f64
+where
+    F: Fn(&[f64], Option<&mut [f64]>, &mut T) -> f64,
+{
+    // Since ConstraintCfg is just an alias for FunctionCfg,
+    // this function is identical to above
+    let f = unsafe { &mut *(params as *mut ConstraintCfg<F, T>) };
+    let argument = unsafe { slice::from_raw_parts(x, n as usize) };
+    let gradient = if g.is_null() {
+        None
+    } else {
+        Some(unsafe { slice::from_raw_parts_mut(g, n as usize) })
+    };
     (f.objective_fn)(argument, gradient, &mut f.user_data)
 }
 
@@ -180,8 +202,9 @@ pub struct Nlopt<F, T>
 where
     F: Fn(&[f64], Option<&mut [f64]>, &mut T) -> f64,
 {
-    algorithm: Algorithm,
+    _algorithm: Algorithm,
     pub n_dims: usize,
+    target: Target,
     nloptc_obj: sys::nlopt_opt,
     #[allow(dead_code)]
     fn_cfg: FunctionCfg<F, T>,
@@ -260,20 +283,22 @@ where
         // TODO this might be better off as a builder pattern
         let nloptc_obj = unsafe { sys::nlopt_create(algorithm as u32, n_dims as u32) };
         let nlopt = Nlopt {
-            algorithm,
+            _algorithm: algorithm,
             n_dims: n_dims,
+            target,
             nloptc_obj,
             fn_cfg: FunctionCfg {
                 objective_fn,
                 user_data,
-            }
+            },
         };
         // Our strategy is to pass the actual objective function as part of the
         // parameters to the callback. For this we pack it inside a Function struct.
         // We allocation our Function on the heap and pass a pointer to the C lib
         // (This is pretty unsafe but works).
         // `into_raw` will leak the boxed object
-        let fn_cfg_ptr = &nlopt.fn_cfg as *const FunctionCfg<F, T> as *mut FunctionCfg<F, T> as *mut c_void;
+        let fn_cfg_ptr =
+            &nlopt.fn_cfg as *const FunctionCfg<F, T> as *mut FunctionCfg<F, T> as *mut c_void;
         match target {
             Target::Minimize => unsafe {
                 sys::nlopt_set_min_objective(
@@ -384,46 +409,65 @@ where
     /// satisfied;
     /// generally, at least a small positive tolerance is advisable to reduce sensitivity to
     /// rounding errors.
-    pub fn add_equality_constraint<C>(
+    pub fn add_equality_constraint<G, U>(
         &mut self,
-        constraint: ConstraintFn<C>,
-        user_data: C,
+        constraint: G,
+        user_data: U,
         tolerance: f64,
-    ) -> OptResult {
-        let constraint = ConstraintCfg {
-            objective_fn: constraint,
-            user_data,
-        };
-        result_from_outcome(unsafe {
-            sys::nlopt_add_equality_constraint(
-                self.nloptc_obj,
-                Some(function_raw_callback::<F, T>),
-                Box::into_raw(Box::new(constraint)) as *mut c_void,
-                tolerance,
-            )
-        })
+    ) -> OptResult
+    where
+        G: Fn(&[f64], Option<&mut [f64]>, &mut U) -> f64,
+    {
+        self.add_constraint(constraint, user_data, tolerance, true)
     }
 
     /// Set a nonlinear constraint of the form `fc(x) ≤ 0`.
     /// For more information see the documentation for `add_equality_constraint`.
-    pub fn add_inequality_constraint<C>(
+    pub fn add_inequality_constraint<G, U>(
         &mut self,
-        constraint: ConstraintFn<C>,
-        user_data: C,
+        constraint: G,
+        user_data: U,
         tolerance: f64,
-    ) -> OptResult {
+    ) -> OptResult
+    where
+        G: Fn(&[f64], Option<&mut [f64]>, &mut U) -> f64,
+    {
+        self.add_constraint(constraint, user_data, tolerance, true)
+    }
+
+    fn add_constraint<G, U>(
+        &mut self,
+        constraint: G,
+        user_data: U,
+        tolerance: f64,
+        is_equality: bool,
+    ) -> OptResult
+    where
+        G: Fn(&[f64], Option<&mut [f64]>, &mut U) -> f64,
+    {
         let constraint = ConstraintCfg {
             objective_fn: constraint,
             user_data,
         };
-        result_from_outcome(unsafe {
-            sys::nlopt_add_inequality_constraint(
-                self.nloptc_obj,
-                Some(function_raw_callback::<F, T>),
-                Box::into_raw(Box::new(constraint)) as *mut c_void,
-                tolerance,
-            )
-        })
+        let ptr = Box::into_raw(Box::new(constraint)) as *mut c_void;
+        let outcome = unsafe {
+            if is_equality {
+                sys::nlopt_add_equality_constraint(
+                    self.nloptc_obj,
+                    Some(constraint_raw_callback::<G, U>),
+                    ptr,
+                    tolerance,
+                )
+            } else {
+                sys::nlopt_add_inequality_constraint(
+                    self.nloptc_obj,
+                    Some(constraint_raw_callback::<G, U>),
+                    ptr,
+                    tolerance,
+                )
+            }
+        };
+        result_from_outcome(outcome)
     }
 
     // TODO untested
@@ -645,24 +689,32 @@ where
     /// search algorithm, its stopping criteria, and other algorithm parameters. (However, the
     /// objective function, bounds, and nonlinear-constraint parameters of `local_opt` are ignored.)
     /// The dimension `n` of `local_opt` must match that of the main optimization.
-    pub fn set_local_optimizer(&mut self, algorithm: Algorithm) -> Result<Nlopt<ObjFn<()>, ()>, FailState>
-    {
-        fn stub_opt(_: &[f64], _: Option<&mut [f64]>, _: &mut ()) -> f64 { unreachable!() }
-        // place on heap and leak out a pointer (this effectively type-erases it)
-        let local_nloptc_obj = unsafe { sys::nlopt_create(algorithm as u32, self.n_dims as u32) };
-        let mut local_opt = Nlopt {
-            algorithm,
-            n_dims: self.n_dims,
-            nloptc_obj: local_nloptc_obj,
-            fn_cfg: FunctionCfg {
-                objective_fn: stub_opt as ObjFn<()>,
-                user_data: ()
-            }
-        };
-        local_opt.set_xtol_rel(1e-6).unwrap();
+    ///
+    /// A stubbed version of `local_opt` can be obtained with `get_local_optimizer`.
+    pub fn set_local_optimizer(
+        &mut self,
+        local_opt: Nlopt<ObjFn<()>, ()>
+    ) -> OptResult {
         result_from_outcome(unsafe {
-            sys::nlopt_set_local_optimizer(self.nloptc_obj, local_nloptc_obj)
-        }).map(|_| local_opt)
+            sys::nlopt_set_local_optimizer(self.nloptc_obj, local_opt.nloptc_obj)
+        })
+    }
+
+    pub fn get_local_optimizer(
+        &mut self,
+        algorithm: Algorithm,
+    ) -> Nlopt<ObjFn<()>, ()> {
+        fn stub_opt(_: &[f64], _: Option<&mut [f64]>, _: &mut ()) -> f64 {
+            unreachable!()
+        }
+        // create a new object based on former one
+        Nlopt::new(
+            algorithm,
+            self.n_dims,
+            stub_opt as ObjFn<()>,
+            self.target,
+            (),
+        )
     }
 
     /// For derivative-free local-optimization algorithms, the optimizer must somehow decide on some
@@ -886,17 +938,14 @@ mod tests {
         // Test adapted from nloptr docs
 
         fn objfn(x: &[f64], _grad: Option<&mut [f64]>, _params: &mut ()) -> f64 {
-            println!("obj {:?}", x);
             (x[0] - 2.0).powi(2) + (x[1] - 1.0).powi(2)
         }
 
         fn hin(x: &[f64], _grad: Option<&mut [f64]>, _params: &mut ()) -> f64 {
-            println!("hin {:?}", x);
             0.25 * x[0].powi(2) + x[1].powi(2) - 1.
         }
 
         fn heq(x: &[f64], _grad: Option<&mut [f64]>, _params: &mut ()) -> f64 {
-            println!("heq {:?}", x);
             x[0] - 2.0 * x[1] + 1.
         }
 
@@ -905,12 +954,13 @@ mod tests {
         opt.add_equality_constraint(heq, (), 1e-6).unwrap();
         opt.set_xtol_rel(1e-6).unwrap();
 
-        // let mut inner_opt = Nlopt::new(Algorithm::Cobyla, 2, objfn, Target::Minimize, ());
-        let mut local_opt = opt.set_local_optimizer(Algorithm::Cobyla).unwrap();
+        let mut local_opt = opt.get_local_optimizer(Algorithm::Cobyla);
         local_opt.set_xtol_rel(1e-6).unwrap();
+        opt.set_local_optimizer(local_opt).unwrap();
 
         let mut input = vec![1., 1.];
         let (_s, v) = opt.optimize(&mut input).unwrap();
-        assert_eq!(v, 1.3934640682303436);
+        assert_eq!(v, 1.3934641363274296);
+        assert_eq!(&input, &[0.8228759809610364, 0.9114382693880294]);
     }
 }
