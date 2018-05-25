@@ -210,19 +210,7 @@ where
     fn_cfg: FunctionCfg<F, T>,
 }
 
-/// A function `f(x) | R^n --> R` with additional user specified parameters `params` of type `T`.
-///
-/// * `argument` - `n`-dimensional array `x`
-/// * `gradient` - `n`-dimensional array to store the gradient `grad f(x)`. If `gradient` matches
-/// `Some(x)`, the user is required to provide a gradient, otherwise the optimization will
-/// probabely fail.
-/// * `params` - user defined data
-///
-/// # Returns
-/// `f(x)`
-pub type ObjectiveFn<T> = fn(argument: &[f64], gradient: Option<&mut [f64]>, params: &mut T) -> f64;
-
-/// Packs a function of type `ObjectiveFn<T>` with a user defined parameter set of type `T`.
+/// Packs an objective function with a user defined parameter set of type `T`.
 struct FunctionCfg<F, T>
 where
     F: Fn(&[f64], Option<&mut [f64]>, &mut T) -> f64,
@@ -231,7 +219,6 @@ where
     pub user_data: T,
 }
 
-pub type ConstraintFn<T> = ObjectiveFn<T>;
 type ConstraintCfg<F, T> = FunctionCfg<F, T>;
 
 /// A function `f(x) | R^n --> R^m` with additional user specified parameters `params` of type `T`.
@@ -400,7 +387,7 @@ where
     /// you wish.
     ///
     /// In particular, a nonlinear constraint of the form `fc(x) = 0`, where the function
-    /// fc is an `ObjectiveFn<T>`, can be specified by calling this function.
+    /// fc is has the same form as an objective function, can be specified by calling this function.
     ///
     /// * `tolerance` - This parameter is a tolerance
     /// that is used for the purpose of stopping criteria only: a point `x` is considered feasible for
@@ -931,6 +918,25 @@ mod tests {
             Err((e, _)) => panic!(e),
         }
         assert_eq!(&x0, &expect);
+    }
+
+    #[test]
+    fn test_praxis_closure() {
+        fn objfn(x: &[f64]) -> f64 {
+            // max = 4 at x0 = 1, x1 = 0
+            ((x[0] - 1.) * (x[0] - 1.) + x[1] * x[1]) * -1. + 4.
+        }
+
+        let opt = Nlopt::new(
+            Algorithm::Praxis,
+            2,
+            |x, _, ()| objfn(x),
+            Target::Maximize,
+            ());
+        let mut input = vec![3.0, -2.0];
+        let (_s, val) = opt.optimize(&mut input).unwrap();
+        assert_eq!(val, 4.);
+        assert_eq!(input, &[1., 0.]);
     }
 
     #[test]
