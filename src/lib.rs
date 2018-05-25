@@ -195,10 +195,9 @@ extern "C" fn mfunction_raw_callback<F, T>(
     } else {
         Some(unsafe { slice::from_raw_parts_mut(g, (n as usize) * (m as usize)) })
     };
-    let res = (f.constraint)(re, argument, gradient, &mut f.user_data);
+    (f.constraint)(re, argument, gradient, &mut f.user_data);
     // Important: we don't want f to get dropped at this point
     std::mem::forget(f);
-    res
 }
 
 /// This is the central ```struct``` of this library. It represents an optimization of a given
@@ -428,7 +427,7 @@ where
     where
         G: Fn(&[f64], Option<&mut [f64]>, &mut U) -> f64,
     {
-        self.add_constraint(constraint, user_data, tolerance, true)
+        self.add_constraint(constraint, user_data, tolerance, false)
     }
 
     fn add_constraint<G, U>(
@@ -500,7 +499,7 @@ where
     where
         G: Fn(&mut [f64], &[f64], Option<&mut [f64]>, &mut U),
     {
-        self.add_mconstraint(m, constraint, user_data, tolerance, true)
+        self.add_mconstraint(m, constraint, user_data, tolerance, false)
     }
 
     fn add_mconstraint<G, U>(
@@ -997,7 +996,58 @@ mod tests {
 
         let mut input = vec![1., 1.];
         let (_s, v) = opt.optimize(&mut input).unwrap();
-        assert_eq!(v, 1.3934641363274296);
-        assert_eq!(&input, &[0.8228759809610364, 0.9114382693880294]);
+        assert_eq!(v, 1.3934640682303436);
+        assert_eq!(&input, &[0.8228760595426139, 0.9114376093794901]);
+    }
+
+    #[test]
+    fn test_auglag_mconstraint() {
+        fn objfn(x: &[f64], _grad: Option<&mut [f64]>, _user_data: &mut ()) -> f64 {
+            (x[0] - 2.0).powi(2) + (x[1] - 1.0).powi(2)
+        }
+
+        fn hin(x: &[f64]) -> f64 {
+            0.25 * x[0].powi(2) + x[1].powi(2) - 1.
+        }
+
+        fn heq(x: &[f64]) -> f64 {
+            x[0] - 2.0 * x[1] + 1.
+        }
+
+        fn m_ineq_constraint(result: &mut [f64], x: &[f64]) {
+            result[0] = hin(x);
+            // shouldn't affect the optimization, will always be < hin1
+            result[1] = hin(x) - 1.0;
+            result[2] = hin(x) - 2.0;
+        }
+
+        fn m_eq_constraint(result: &mut [f64], x: &[f64]) {
+            result[0] = heq(x);
+        }
+
+        let mut opt = Nlopt::new(Algorithm::Auglag, 2, objfn, Target::Minimize, ());
+
+        opt.add_inequality_mconstraint(
+            3,
+            |r, x, _, ()| m_ineq_constraint(r, x),
+            (),
+            1e-6).unwrap();
+
+        // TODO if we use two eq constraints, it doesn't converge *shrug*
+        opt.add_equality_mconstraint(
+            1,
+            |r, x, _, ()| m_eq_constraint(r, x),
+            (),
+            1e-6).unwrap();
+
+        opt.set_xtol_rel(1e-6).unwrap();
+
+        let mut local_opt = opt.get_local_optimizer(Algorithm::Bobyqa);
+        local_opt.set_xtol_rel(1e-6).unwrap();
+        opt.set_local_optimizer(local_opt).unwrap();
+
+        let mut input = vec![1., 1.];
+        let (_s, v) = opt.optimize(&mut input).unwrap();
+        assert_eq!(v, 1.3934648637383988);  // don't really know if this is the right answer...
     }
 }
