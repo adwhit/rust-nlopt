@@ -147,7 +147,10 @@ where
     };
 
     // call
-    (f.objective_fn)(argument, gradient, &mut f.user_data)
+    let res = (f.objective_fn)(argument, gradient, &mut f.user_data);
+    // Important: we don't want f to get dropped at this point
+    std::mem::forget(f);
+    res
 }
 
 extern "C" fn constraint_raw_callback<F, T>(
@@ -168,18 +171,23 @@ where
     } else {
         Some(unsafe { slice::from_raw_parts_mut(g, n as usize) })
     };
-    (f.objective_fn)(argument, gradient, &mut f.user_data)
+    let res = (f.objective_fn)(argument, gradient, &mut f.user_data);
+    // Important: we don't want f to get dropped at this point
+    std::mem::forget(f);
+    res
 }
 
-extern "C" fn mfunction_raw_callback<T>(
+extern "C" fn mfunction_raw_callback<F, T>(
     m: u32,
     re: *mut f64,
     n: u32,
     x: *const f64,
     g: *mut f64,
     d: *mut c_void,
-) {
-    let f = unsafe { &mut *(d as *mut MFunction<T>) };
+) where
+    F: Fn(&mut [f64], &[f64], Option<&mut [f64]>, &mut T),
+{
+    let f = unsafe { &mut *(d as *mut MConstraintCfg<F, T>) };
     let re = unsafe { slice::from_raw_parts_mut(re, m as usize) };
     let argument = unsafe { slice::from_raw_parts(x, n as usize) };
     let gradient: Option<&mut [f64]> = if g.is_null() {
@@ -187,7 +195,7 @@ extern "C" fn mfunction_raw_callback<T>(
     } else {
         Some(unsafe { slice::from_raw_parts_mut(g, (n as usize) * (m as usize)) })
     };
-    let res = (f.function)(re, argument, gradient, &mut f.params);
+    let res = (f.constraint)(re, argument, gradient, &mut f.user_data);
     // Important: we don't want f to get dropped at this point
     std::mem::forget(f);
     res
@@ -221,24 +229,25 @@ where
 
 type ConstraintCfg<F, T> = FunctionCfg<F, T>;
 
-/// A function `f(x) | R^n --> R^m` with additional user specified parameters `params` of type `T`.
+/// A function `f(x) | R^n --> R^m` with additional user specified parameters `user_data` of type `T`.
 ///
 /// * `result` - `m`-dimensional array to store the value `f(x)`
 /// * `argument` - `n`-dimensional array `x`
-/// * `gradient` - `n×m`-dimensional array to store the gradient `grad f(x)`. The n dimension of
+/// * `gradient` - `n×m`-diconstraint array to store the gradient `grad f(x)`. The n dimension of
 /// gradient is stored contiguously, so that `df_i / dx_j` is stored in `gradient[i*n + j]`. If
 /// `gradient` is `Some(x)`, the user is required to return a valid gradient, otherwise the
 /// optimization will most likely fail.
-/// * `params` - user defined data
+/// * `user_data` - user defined data
 pub type MObjectiveFn<T> =
-    fn(result: &mut [f64], argument: &[f64], gradient: Option<&mut [f64]>, params: &mut T);
+    fn(result: &mut [f64], argument: &[f64], gradient: Option<&mut [f64]>, user_data: &mut T);
 
-// TODO this should be a private type but leaks due to setter fn
 /// Packs an `m`-dimensional function of type `NLoptMFn<T>` with a user defined parameter set of type `T`.
-pub struct MFunction<T> {
-    m: usize,
-    function: MObjectiveFn<T>,
-    params: T,
+struct MConstraintCfg<F, T>
+where
+    F: Fn(&mut [f64], &[f64], Option<&mut [f64]>, &mut T),
+{
+    constraint: F,
+    user_data: T,
 }
 
 type ObjFn<T> = fn(&[f64], Option<&mut [f64]>, &mut T) -> f64;
@@ -457,7 +466,6 @@ where
         result_from_outcome(outcome)
     }
 
-    // TODO untested
     /// In some applications with multiple constraints, it is more convenient to define a single
     /// function that returns the values (and gradients) of all constraints at once. For example,
     /// different constraint functions might share computations in some way. Or, if you have a large
@@ -467,42 +475,70 @@ where
     ///
     /// * `constraint` - A constraint function bundled with user defined parameters.
     /// * `tolerance` - An array slice of length `m` of the tolerances in each constraint dimension
-    pub fn add_equality_mconstraint(
+    pub fn add_equality_mconstraint<G, U>(
         &mut self,
-        constraint: MFunction<T>,
-        tolerance: &[f64],
-    ) -> OptResult {
-        // TODO MFunction should be private type
-        let m: u32 = constraint.m as u32;
-        result_from_outcome(unsafe {
-            sys::nlopt_add_equality_mconstraint(
-                self.nloptc_obj,
-                m,
-                Some(mfunction_raw_callback::<T>),
-                Box::into_raw(Box::new(constraint)) as *mut c_void,
-                tolerance.as_ptr(),
-            )
-        })
+        m: usize,
+        constraint: G,
+        user_data: U,
+        tolerance: f64,
+    ) -> OptResult
+    where
+        G: Fn(&mut [f64], &[f64], Option<&mut [f64]>, &mut U),
+    {
+        self.add_mconstraint(m, constraint, user_data, tolerance, true)
     }
 
     /// Set a nonlinear multivalue inequality constraint.
     /// For more information see the documentation for `add_equality_mconstraint`.
-    pub fn add_inequality_mconstraint(
+    pub fn add_inequality_mconstraint<G, U>(
         &mut self,
-        constraint: MFunction<T>,
-        tolerance: &[f64],
-    ) -> OptResult {
-        // TODO MFunction should be private type
-        let m: u32 = constraint.m as u32;
-        result_from_outcome(unsafe {
-            sys::nlopt_add_inequality_mconstraint(
-                self.nloptc_obj,
-                m,
-                Some(mfunction_raw_callback::<T>),
-                Box::into_raw(Box::new(constraint)) as *mut c_void,
-                tolerance.as_ptr(),
-            )
-        })
+        m: usize,
+        constraint: G,
+        user_data: U,
+        tolerance: f64,
+    ) -> OptResult
+    where
+        G: Fn(&mut [f64], &[f64], Option<&mut [f64]>, &mut U),
+    {
+        self.add_mconstraint(m, constraint, user_data, tolerance, true)
+    }
+
+    fn add_mconstraint<G, U>(
+        &mut self,
+        m: usize,
+        constraint: G,
+        user_data: U,
+        tolerance: f64,
+        is_equality: bool,
+    ) -> OptResult
+    where
+        G: Fn(&mut [f64], &[f64], Option<&mut [f64]>, &mut U),
+    {
+        let mconstraint = MConstraintCfg {
+            constraint,
+            user_data,
+        };
+        let ptr = Box::into_raw(Box::new(mconstraint)) as *mut c_void;
+        let outcome = unsafe {
+            if is_equality {
+                sys::nlopt_add_equality_mconstraint(
+                    self.nloptc_obj,
+                    m as c_uint,
+                    Some(mfunction_raw_callback::<G, U>),
+                    ptr,
+                    &tolerance,
+                )
+            } else {
+                sys::nlopt_add_inequality_mconstraint(
+                    self.nloptc_obj,
+                    m as c_uint,
+                    Some(mfunction_raw_callback::<G, U>),
+                    ptr,
+                    &tolerance,
+                )
+            }
+        };
+        result_from_outcome(outcome)
     }
 
     // TODO untested
@@ -678,19 +714,13 @@ where
     /// The dimension `n` of `local_opt` must match that of the main optimization.
     ///
     /// A stubbed version of `local_opt` can be obtained with `get_local_optimizer`.
-    pub fn set_local_optimizer(
-        &mut self,
-        local_opt: Nlopt<ObjFn<()>, ()>
-    ) -> OptResult {
+    pub fn set_local_optimizer(&mut self, local_opt: Nlopt<ObjFn<()>, ()>) -> OptResult {
         result_from_outcome(unsafe {
             sys::nlopt_set_local_optimizer(self.nloptc_obj, local_opt.nloptc_obj)
         })
     }
 
-    pub fn get_local_optimizer(
-        &mut self,
-        algorithm: Algorithm,
-    ) -> Nlopt<ObjFn<()>, ()> {
+    pub fn get_local_optimizer(&mut self, algorithm: Algorithm) -> Nlopt<ObjFn<()>, ()> {
         fn stub_opt(_: &[f64], _: Option<&mut [f64]>, _: &mut ()) -> f64 {
             unreachable!()
         }
@@ -892,7 +922,7 @@ mod tests {
                 .sum()
         }
 
-        fn objfn(x: &[f64], grad: Option<&mut [f64]>, _params: &mut ()) -> f64 {
+        fn objfn(x: &[f64], grad: Option<&mut [f64]>, _user_data: &mut ()) -> f64 {
             let grad = grad.unwrap();
             approximate_gradient(x, flb, grad);
             flb(x)
@@ -932,7 +962,8 @@ mod tests {
             2,
             |x, _, ()| objfn(x),
             Target::Maximize,
-            ());
+            (),
+        );
         let mut input = vec![3.0, -2.0];
         let (_s, val) = opt.optimize(&mut input).unwrap();
         assert_eq!(val, 4.);
@@ -943,15 +974,15 @@ mod tests {
     fn test_auglag() {
         // Test adapted from nloptr docs
 
-        fn objfn(x: &[f64], _grad: Option<&mut [f64]>, _params: &mut ()) -> f64 {
+        fn objfn(x: &[f64], _grad: Option<&mut [f64]>, _user_data: &mut ()) -> f64 {
             (x[0] - 2.0).powi(2) + (x[1] - 1.0).powi(2)
         }
 
-        fn hin(x: &[f64], _grad: Option<&mut [f64]>, _params: &mut ()) -> f64 {
+        fn hin(x: &[f64], _grad: Option<&mut [f64]>, _user_data: &mut ()) -> f64 {
             0.25 * x[0].powi(2) + x[1].powi(2) - 1.
         }
 
-        fn heq(x: &[f64], _grad: Option<&mut [f64]>, _params: &mut ()) -> f64 {
+        fn heq(x: &[f64], _grad: Option<&mut [f64]>, _user_data: &mut ()) -> f64 {
             x[0] - 2.0 * x[1] + 1.
         }
 
