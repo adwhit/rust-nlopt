@@ -260,7 +260,7 @@ where
     /// * `algorithm` - Which optimization algorithm to use. This cannot be changed after creation
     /// of the struct
     /// * `n_dims` - Dimension of the argument to the objective function
-    /// * `obj` - The objective function. This function has the signature `(&[f64],
+    /// * `objective_fn` - This function has the signature `(&[f64],
     /// Option<&mut [f64]>, T) -> f64`. The first argument is the vector `x` passed to the function.
     /// The second argument is `Some(&mut [f64])` if the calling optimization algorithm needs
     /// the gradient of the function. If the gradient is not needed, it is `None`. The last
