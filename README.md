@@ -2,7 +2,7 @@
 
 Thin wrapper around the C [`nlopt`](https://nlopt.readthedocs.io/en/latest/) library.
 
-Note: Not all algorithms have been tested.
+Note: Not all functionality has been tested.
 
 ## [Docs](https://docs.rs/nlopt)
 
@@ -24,25 +24,17 @@ lib.exe /def:libnlopt-0.def /out:nlopt.lib /MACHINE:x64`
 For either platform, the resulting object must be on the search path at link-time. This can be set with
 environment variables, the `rustc` command or a `build.rs` script.
 
-Example `rustc` command:
-
-```
-cargo rustc --release -- -L /path/to/nlopt
-```
-
-Example `build.rs`:
-
-```
-fn main() {
-    println!(r"cargo:rustc-link-search=C:\path\to\nlopt");
-}
-```
-
 ## Tests
 
-This can be tricky because it's necessary to pass in linker arguments, and without `build.rs` this may
-not work with a simple `cargo test` command. One quick workaround is:
 ```
-cargo rustc --tests -- -L /path/to/nlopt
-target/debug/nlopt-<SOME-HASH>
+cargo test
 ```
+
+## Examples
+
+For a basic usage example, see `examples/bobyqa.rs`. Run with
+```
+cargo run --example bobyqa
+```
+
+See also the tests in `src/lib.rs`
