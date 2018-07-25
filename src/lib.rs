@@ -4,6 +4,7 @@
 //! algorithms For details of the various algorithms,
 //! consult the [nlopt docs](https://nlopt.readthedocs.io/en/latest/NLopt_Algorithms/)
 
+use std::marker::PhantomData;
 use std::os::raw::{c_uint, c_ulong, c_void};
 use std::slice;
 
@@ -132,9 +133,6 @@ extern "C" fn function_raw_callback<F: ObjFn<T>, T>(
     g: *mut f64,
     params: *mut c_void,
 ) -> f64 {
-    // recover Function object from supplied params
-    let f = unsafe { &mut *(params as *mut FunctionCfg<F, T>) };
-
     // prepare args
     let argument = unsafe { slice::from_raw_parts(x, n as usize) };
     let gradient = if g.is_null() {
@@ -143,7 +141,8 @@ extern "C" fn function_raw_callback<F: ObjFn<T>, T>(
         Some(unsafe { slice::from_raw_parts_mut(g, n as usize) })
     };
 
-    // call
+    // recover FunctionCfg object from supplied params and call
+    let f = unsafe { &mut *(params as *mut FunctionCfg<F, T>) };
     let res = (f.objective_fn)(argument, gradient, &mut f.user_data);
     // Important: we don't want f to get dropped at this point
     std::mem::forget(f);
@@ -224,9 +223,9 @@ type ConstraintCfg<F, T> = FunctionCfg<F, T>;
 /// `gradient` is `Some(x)`, the user is required to return a valid gradient, otherwise the
 /// optimization will most likely fail.
 /// * `user_data` - user defined data
-pub trait MObjFn<U>: Fn(&mut[f64], &[f64], Option<&mut [f64]>, &mut U) {}
+pub trait MObjFn<U>: Fn(&mut [f64], &[f64], Option<&mut [f64]>, &mut U) {}
 
-impl<T, U> MObjFn<U> for T where T: Fn(&mut[f64], &[f64], Option<&mut [f64]>, &mut U) {}
+impl<T, U> MObjFn<U> for T where T: Fn(&mut [f64], &[f64], Option<&mut [f64]>, &mut U) {}
 
 /// Packs an `m`-dimensional function of type `NLoptMFn<T>` with a user defined parameter set of type `T`.
 struct MConstraintCfg<F: MObjFn<T>, T> {
@@ -244,8 +243,7 @@ pub struct Nlopt<F: ObjFn<T>, T> {
     pub n_dims: usize,
     target: Target,
     nloptc_obj: sys::nlopt_opt,
-    #[allow(dead_code)]
-    fn_cfg: FunctionCfg<F, T>,
+    func_phantom: PhantomData<(F, T)>,
 }
 
 impl<F: ObjFn<T>, T> Nlopt<F, T> {
@@ -271,23 +269,25 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     ) -> Nlopt<F, T> {
         // TODO this might be better off as a builder pattern
         let nloptc_obj = unsafe { sys::nlopt_create(algorithm as u32, n_dims as u32) };
+
+        // Our strategy is to pass the actual objective function as part of the
+        // parameters to the callback. For this we pack it inside a FunctionCfg struct.
+        // We allocation our FunctionCfg on the heap and pass a pointer to the C lib
+        // (This is pretty unsafe but works).
+        // `into_raw` will leak the boxed object
+        let fn_cfg = Box::new(FunctionCfg {
+            objective_fn,
+            user_data, // move user_data into FunctionCfg
+        });
+
+        let fn_cfg_ptr = Box::into_raw(fn_cfg) as *mut c_void;
         let nlopt = Nlopt {
             _algorithm: algorithm,
             n_dims: n_dims,
             target,
             nloptc_obj,
-            fn_cfg: FunctionCfg {
-                objective_fn,
-                user_data,
-            },
+            func_phantom: PhantomData,
         };
-        // Our strategy is to pass the actual objective function as part of the
-        // parameters to the callback. For this we pack it inside a Function struct.
-        // We allocation our Function on the heap and pass a pointer to the C lib
-        // (This is pretty unsafe but works).
-        // `into_raw` will leak the boxed object
-        let fn_cfg_ptr =
-            &nlopt.fn_cfg as *const FunctionCfg<F, T> as *mut FunctionCfg<F, T> as *mut c_void;
         match target {
             Target::Minimize => unsafe {
                 sys::nlopt_set_min_objective(
@@ -700,13 +700,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
             unreachable!()
         }
         // create a new object based on former one
-        Nlopt::new(
-            algorithm,
-            self.n_dims,
-            stub_opt,
-            self.target,
-            (),
-        )
+        Nlopt::new(algorithm, self.n_dims, stub_opt, self.target, ())
     }
 
     /// For derivative-free local-optimization algorithms, the optimizer must somehow decide on some
@@ -877,6 +871,29 @@ mod tests {
     }
 
     #[test]
+    fn test_user_data() {
+        fn objfn(x: &[f64], grad: Option<&mut [f64]>, coefs: &mut (f64, Vec<f64>)) -> f64 {
+            assert!(grad.is_none());
+            let x = x[0];
+            coefs.0 * x * x + coefs.1[0] * x + coefs.1[1]
+        }
+
+        let mut params = vec![1.];
+        let userdata = (1.0, vec![-2., 3.]);
+        let mut opt = Nlopt::<_, (f64, Vec<f64>)>::new(
+            Algorithm::Bobyqa,
+            2,
+            objfn,
+            Target::Minimize,
+            userdata,
+        );
+        opt.set_xtol_rel(1e-8).unwrap();
+        let res = opt.optimize(&mut params).unwrap();
+        assert_eq!(res.1, 2.0);
+        assert_eq!(params, vec![1.0]);
+    }
+
+    #[test]
     fn test_lbfgs() {
         // Taken from `nloptr` docs
         fn flb(x: &[f64]) -> f64 {
@@ -932,7 +949,7 @@ mod tests {
         let opt = Nlopt::new(
             Algorithm::Praxis,
             2,
-            |x: &[f64], _: Option<&mut[f64]>, _: &mut ()| objfn(x),
+            |x: &[f64], _: Option<&mut [f64]>, _: &mut ()| objfn(x),
             Target::Maximize,
             (),
         );
@@ -1004,14 +1021,16 @@ mod tests {
             3,
             |r: &mut [f64], x: &[f64], _: Option<&mut [f64]>, _: &mut ()| m_ineq_constraint(r, x),
             (),
-            1e-6).unwrap();
+            1e-6,
+        ).unwrap();
 
         // TODO if we use two eq constraints, it doesn't converge *shrug*
         opt.add_equality_mconstraint(
             1,
             |r: &mut [f64], x: &[f64], _: Option<&mut [f64]>, _: &mut ()| m_eq_constraint(r, x),
             (),
-            1e-6).unwrap();
+            1e-6,
+        ).unwrap();
 
         opt.set_xtol_rel(1e-6).unwrap();
 
@@ -1021,6 +1040,6 @@ mod tests {
 
         let mut input = vec![1., 1.];
         let (_s, v) = opt.optimize(&mut input).unwrap();
-        assert_eq!(v, 1.3934648637383988);  // don't really know if this is the right answer...
+        assert_eq!(v, 1.3934648637383988); // don't really know if this is the right answer...
     }
 }
