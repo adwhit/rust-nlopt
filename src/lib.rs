@@ -464,7 +464,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
         m: usize,
         constraint: G,
         user_data: U,
-        tolerance: f64,
+        tolerance: &[f64],
     ) -> OptResult {
         self.add_mconstraint(m, constraint, user_data, tolerance, true)
     }
@@ -476,7 +476,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
         m: usize,
         constraint: G,
         user_data: U,
-        tolerance: f64,
+        tolerance: &[f64],
     ) -> OptResult {
         self.add_mconstraint(m, constraint, user_data, tolerance, false)
     }
@@ -486,9 +486,10 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
         m: usize,
         constraint: G,
         user_data: U,
-        tolerance: f64,
+        tolerance: &[f64],
         is_equality: bool,
     ) -> OptResult {
+        assert_eq!(m, tolerance.len());
         let mconstraint = MConstraintCfg {
             constraint,
             user_data,
@@ -501,7 +502,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
                     m as c_uint,
                     Some(mfunction_raw_callback::<G, U>),
                     ptr,
-                    &tolerance,
+                    tolerance.as_ptr(),
                 )
             } else {
                 sys::nlopt_add_inequality_mconstraint(
@@ -509,7 +510,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
                     m as c_uint,
                     Some(mfunction_raw_callback::<G, U>),
                     ptr,
-                    &tolerance,
+                    tolerance.as_ptr(),
                 )
             }
         };
@@ -1021,7 +1022,7 @@ mod tests {
             3,
             |r: &mut [f64], x: &[f64], _: Option<&mut [f64]>, _: &mut ()| m_ineq_constraint(r, x),
             (),
-            1e-6,
+            &[1e-6;3],
         ).unwrap();
 
         // TODO if we use two eq constraints, it doesn't converge *shrug*
@@ -1029,7 +1030,7 @@ mod tests {
             1,
             |r: &mut [f64], x: &[f64], _: Option<&mut [f64]>, _: &mut ()| m_eq_constraint(r, x),
             (),
-            1e-6,
+            &[1e-6;1],
         ).unwrap();
 
         opt.set_xtol_rel(1e-6).unwrap();
