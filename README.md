@@ -2,26 +2,19 @@
 
 Thin wrapper around the C [`nlopt`](https://nlopt.readthedocs.io/en/latest/) library.
 
-Note: Not all functionality has been tested.
+Note: Most functionality has been implemented, but not all has been tested working.
 
 ## [Docs](https://docs.rs/nlopt)
 
 ## Building
 
-This library depends upon [nlopt](http://nlopt.readthedocs.io) and will fail if it cannot find a library to link against.
+This crate depends upon `nlopt` and will fail if it cannot find a library to link against. It has been tested against `nlopt v2.5.0` - it may or may not work against other versions.
 
-For Linux, it is recommended to clone `nlopt` from [github](http://github.com/stevengj/nlopt) (the official release is
-many years behind master) and follow the [installation docs](https://nlopt.readthedocs.io/en/latest/NLopt_Installation/).
-You may find it more convenient the build `nlopt` as a static library, by passing `-DBUILD_SHARED_LIBS=OFF` to `cmake`.
+The source can be downloaded from the [official site](https://nlopt.readthedocs.io/en/latest/), which also has provides build instructions.
 
-Windows is a bit more tricky. One way is to [download](http://ab-initio.mit.edu/nlopt/nlopt-2.4.2-dll64.zip) the precompiled
-binary and turn it into `nlopt.lib` by executing
-```
-lib.exe /def:libnlopt-0.def /out:nlopt.lib /MACHINE:x64`
-```
-(This requires the Visual Studio development tools to be installed).
+Note you may find it more convenient the build `nlopt` as a static library, by passing `-DBUILD_SHARED_LIBS=OFF` to `cmake`.
 
-For either platform, the resulting object must be on the search path at link-time. This can be set with
+The resulting C-lib must be on the search path at link-time. This can be set with
 environment variables, the `rustc` command or a `build.rs` script.
 
 ## Tests
@@ -29,6 +22,7 @@ environment variables, the `rustc` command or a `build.rs` script.
 ```
 cargo test
 ```
+(This is a quick way to check the C-lib can be found).
 
 ## Examples
 
@@ -38,3 +32,7 @@ cargo run --example bobyqa
 ```
 
 See also the tests in `src/lib.rs`
+
+## Attribution
+
+This library was originally forked from <https://github.com/mithodin/rust-nlopt>.
