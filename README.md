@@ -2,8 +2,6 @@
 
 Thin wrapper around the C [`nlopt`](https://nlopt.readthedocs.io/en/latest/) library.
 
-Note: Most functionality has been implemented, but not all has been tested working.
-
 ## [Docs](https://docs.rs/nlopt)
 
 ## Building
