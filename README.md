@@ -6,21 +6,9 @@ Thin wrapper around the C [`nlopt`](https://nlopt.readthedocs.io/en/latest/) lib
 
 ## Building
 
-This crate depends upon `nlopt` and will fail if it cannot find a library to link against. It has been tested against `nlopt v2.5.0` - it may or may not work against other versions.
+You will need [`cmake`](https://cmake.org/) to build successfully. It should be easy to find
+on your favourite package manager.
 
-The source can be downloaded from the [official site](https://nlopt.readthedocs.io/en/latest/), which also has provides build instructions.
-
-Note you may find it more convenient the build `nlopt` as a static library, by passing `-DBUILD_SHARED_LIBS=OFF` to `cmake`.
-
-The resulting C-lib must be on the search path at link-time. This can be set with
-environment variables, the `rustc` command or a `build.rs` script.
-
-## Tests
-
-```
-cargo test
-```
-(This is a quick way to check the C-lib can be found).
 
 ## Examples
 
@@ -28,9 +16,18 @@ For a basic usage example, see `examples/bobyqa.rs`. Run with
 ```
 cargo run --example bobyqa
 ```
-
-See also the tests in `src/lib.rs`
+See also the tests in `src/lib.rs`. Run them with
+```
+cargo test
+```
 
 ## Attribution
 
 This library was originally forked from <https://github.com/mithodin/rust-nlopt>.
+
+## License
+The Rust code is licensed under MIT.
+
+For convenience, this crate bundles `nlopt` and links it statically. This may have
+licensing implications so I refer the user to the [bundled license](nlopt-2.5.0/COPYING)
+for more information.
