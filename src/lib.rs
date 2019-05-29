@@ -12,7 +12,7 @@ use std::slice;
 #[allow(non_upper_case_globals)]
 mod nlopt_sys;
 
-use nlopt_sys as sys;
+use self::nlopt_sys as sys;
 
 /// Target object function state
 #[derive(Debug, Clone, Copy)]
@@ -101,8 +101,8 @@ pub enum SuccessState {
 pub type OptResult = std::result::Result<SuccessState, FailState>;
 
 fn result_from_outcome(outcome: sys::nlopt_result) -> OptResult {
-    use FailState::*;
-    use SuccessState::*;
+    use self::FailState::*;
+    use self::SuccessState::*;
     if outcome < 0 {
         let err = match outcome {
             sys::nlopt_result_NLOPT_FAILURE => Failure,

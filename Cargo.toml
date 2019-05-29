@@ -7,6 +7,7 @@ license = "MIT"
 repository = "http://github.com/jesskfullwood/rust-nlopt"
 readme = "README.md"
 keywords = ["nonlinear", "optimization"]
+edition = "2018"
 
 [dev-dependencies]
 num-iter = "0.1.35"
