@@ -8,5 +8,5 @@ fn main() {
     // Lib could be in either of two locations
     println!("cargo:rustc-link-search=native={}/lib", dst.display());
     println!("cargo:rustc-link-search=native={}/lib64", dst.display());
-    println!("cargo:rustc-link-lib=static=nlopt");
+    // println!("cargo:rustc-link-lib=static=nlopt");
 }
