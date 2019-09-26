@@ -9,8 +9,5 @@ readme = "README.md"
 keywords = ["nonlinear", "optimization"]
 edition = "2018"
 
-[dev-dependencies]
-num-iter = "0.1.35"
-
 [build-dependencies]
 cmake = "0.1.40"

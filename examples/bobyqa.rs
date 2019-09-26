@@ -1,11 +1,7 @@
-extern crate nlopt;
-extern crate num_iter;
-
 // this example is adapted from the original bobyqa source
 // at http://mat.uc.pt/~zhang/software.html
 
 use nlopt::*;
-use num_iter::*;
 
 use std::f64::consts::PI;
 
@@ -15,9 +11,9 @@ fn main() {
 
 fn objfn(x: &[f64], _gradient: Option<&mut [f64]>, _params: &mut ()) -> f64 {
     let mut f = 0.0;
-    for i in range_step_inclusive(4, x.len(), 2) {
+    for i in (4..=x.len()).step_by(2) {
         let j1 = i - 2;
-        for j in range_step_inclusive(2, j1, 2) {
+        for j in (2..=j1).step_by(2) {
             let tmpa = x[i - 2] - x[j - 2];
             let tmpb = x[i - 1] - x[j - 1];
             let tmp = tmpa * tmpa + tmpb * tmpb;
