@@ -1,8 +1,10 @@
+[![crates.io](https://img.shields.io/crates/v/nlopt.svg)](https://crates.io/crates/nlopt)
+![Build Status](https://github.com/adwhit/rust-nlopt/workflows/CI/badge.svg)
+[![Documentation](https://docs.rs/nlopt/badge.svg)](https://docs.rs/nlopt)
+
 # nlopt
 
 Thin wrapper around the C [`nlopt`](https://nlopt.readthedocs.io/en/latest/) library.
-
-## [Docs](https://docs.rs/nlopt)
 
 ## Building
 

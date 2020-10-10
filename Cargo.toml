@@ -11,4 +11,4 @@ categories = ["science", "algorithms"]
 edition = "2018"
 
 [build-dependencies]
-cmake = "0.1.40"
+cmake = "0.1.44"
