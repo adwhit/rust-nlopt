@@ -12,3 +12,6 @@ edition = "2018"
 
 [build-dependencies]
 cmake = "0.1.44"
+
+[dev-dependencies]
+approx = "0.4"

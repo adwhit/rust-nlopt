@@ -855,6 +855,7 @@ pub fn approximate_gradient(x0: &[f64], f: fn(&[f64]) -> f64, grad: &mut [f64]) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_abs_diff_eq;
 
     #[test]
     fn test_approx_gradient() {
@@ -987,8 +988,9 @@ mod tests {
 
         let mut input = vec![1., 1.];
         let (_s, v) = opt.optimize(&mut input).unwrap();
-        assert_eq!(v, 1.3934640682303436);
-        assert_eq!(&input, &[0.8228760595426139, 0.9114376093794901]);
+        assert_abs_diff_eq!(v, 1.3934640682303436, epsilon = 1e-6);
+        let expected = vec![0.8228760595426139, 0.9114376093794901];
+        assert_abs_diff_eq!(expected.as_slice(), input.as_slice(), epsilon = 1e-6);
     }
 
     #[test]
@@ -1022,16 +1024,18 @@ mod tests {
             3,
             |r: &mut [f64], x: &[f64], _: Option<&mut [f64]>, _: &mut ()| m_ineq_constraint(r, x),
             (),
-            &[1e-6;3],
-        ).unwrap();
+            &[1e-6; 3],
+        )
+        .unwrap();
 
         // TODO if we use two eq constraints, it doesn't converge *shrug*
         opt.add_equality_mconstraint(
             1,
             |r: &mut [f64], x: &[f64], _: Option<&mut [f64]>, _: &mut ()| m_eq_constraint(r, x),
             (),
-            &[1e-6;1],
-        ).unwrap();
+            &[1e-6; 1],
+        )
+        .unwrap();
 
         opt.set_xtol_rel(1e-6).unwrap();
 
