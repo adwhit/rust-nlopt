@@ -8,11 +8,11 @@ use std::marker::PhantomData;
 use std::os::raw::{c_uint, c_ulong, c_void};
 use std::slice;
 
+use self::nlopt_sys as sys;
+
 #[allow(non_camel_case_types)]
 #[allow(non_upper_case_globals)]
 mod nlopt_sys;
-
-use self::nlopt_sys as sys;
 
 /// Target object function state
 #[derive(Debug, Clone, Copy)]
@@ -837,10 +837,13 @@ impl<F: ObjFn<T>, T> Drop for Nlopt<F, T> {
 /// Helper function to calculate gradient of function numerically.
 /// Can be useful when a gradient must be provided to the optimization
 /// algorithm and a closed-form derivative cannot be obtained
-pub fn approximate_gradient(x0: &[f64], f: fn(&[f64]) -> f64, grad: &mut [f64]) {
+pub fn approximate_gradient<F>(x0: &[f64], f: F, grad: &mut [f64])
+where
+    F: Fn(&[f64]) -> f64,
+{
     let n = x0.len();
     let mut x0 = x0.to_vec();
-    let eps = std::f64::EPSILON.powf(1.0 / 3.0);
+    let eps = f64::EPSILON.powf(1.0 / 3.0);
     for i in 0..n {
         let x0i = x0[i];
         x0[i] = x0i - eps;
@@ -854,8 +857,9 @@ pub fn approximate_gradient(x0: &[f64], f: fn(&[f64]) -> f64, grad: &mut [f64]) 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use approx::assert_abs_diff_eq;
+
+    use super::*;
 
     #[test]
     fn test_approx_gradient() {
