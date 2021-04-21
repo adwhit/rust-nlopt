@@ -1,12 +1,12 @@
 [package]
 name = "nlopt"
-version = "0.5.3"
+version = "0.5.4"
 authors = ["Lucas L. Treffenstädt <lucas@treffenstaedt.de>", "Alex Whitney <adwhit@fastmail.com>"]
 description = "Wrapper for the nlopt library"
 license = "MIT"
 repository = "http://github.com/adwhit/rust-nlopt"
 readme = "README.md"
-keywords = ["nonlinear", "optimization"]
+keywords = ["nonlinear", "optimization", "lbfgs", "bobyqa"]
 categories = ["science", "algorithms"]
 edition = "2018"
 

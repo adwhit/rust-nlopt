@@ -940,7 +940,7 @@ mod tests {
 
         match opt.optimize(&mut x0) {
             Ok((_, v)) => assert_eq!(v, 368.10591287433397),
-            Err((e, _)) => panic!(e),
+            Err((e, _)) => panic!("{:?}", e),
         }
         assert_eq!(&x0, &expect);
     }
