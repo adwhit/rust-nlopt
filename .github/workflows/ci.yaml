@@ -25,3 +25,9 @@ jobs:
         with:
           command: run
           args: --example bobyqa
+
+      - name: Run mma
+        uses: actions-rs/cargo@v1
+        with:
+          command: run
+          args: --example mma

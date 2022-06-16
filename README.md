@@ -14,9 +14,10 @@ on your favourite package manager.
 
 ## Examples
 
-For a basic usage example, see `examples/bobyqa.rs`. Run with
+For a basic usage examples, see the `/examples` directory. Run with
 ```
 cargo run --example bobyqa
+cargo run --example mma
 ```
 See also the tests in `src/lib.rs`. Run them with
 ```

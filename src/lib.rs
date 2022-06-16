@@ -1,10 +1,9 @@
 //! # nlopt
 //!
 //! This is a wrapper for `nlopt`, a C library of useful optimization
-//! algorithms For details of the various algorithms,
+//! algorithms. For details of the various algorithms,
 //! consult the [nlopt docs](https://nlopt.readthedocs.io/en/latest/NLopt_Algorithms/)
 
-use std::marker::PhantomData;
 use std::os::raw::{c_uint, c_ulong, c_void};
 use std::slice;
 
@@ -12,6 +11,7 @@ use self::nlopt_sys as sys;
 
 #[allow(non_camel_case_types)]
 #[allow(non_upper_case_globals)]
+#[allow(dead_code)]
 mod nlopt_sys;
 
 /// Target object function state
@@ -41,6 +41,9 @@ pub enum Algorithm {
     GnMlslLds = sys::nlopt_algorithm_NLOPT_GN_MLSL_LDS,
     GdMlslLds = sys::nlopt_algorithm_NLOPT_GD_MLSL_LDS,
 
+    // TODO I think these only exist when compiled with
+    // C++ (which currently is disabled by build.rs)
+    // so ... check and possibly disable?
     StoGo = sys::nlopt_algorithm_NLOPT_GD_STOGO,
     StoGoRand = sys::nlopt_algorithm_NLOPT_GD_STOGO_RAND,
     Isres = sys::nlopt_algorithm_NLOPT_GN_ISRES,
@@ -75,6 +78,8 @@ pub enum Algorithm {
     LnAuglagEq = sys::nlopt_algorithm_NLOPT_LN_AUGLAG_EQ,
 
     Ccsaq = sys::nlopt_algorithm_NLOPT_LD_CCSAQ,
+
+    Ags = sys::nlopt_algorithm_NLOPT_GN_AGS,
 }
 
 #[repr(i32)]
@@ -143,10 +148,7 @@ extern "C" fn function_raw_callback<F: ObjFn<T>, T>(
 
     // recover FunctionCfg object from supplied params and call
     let f = unsafe { &mut *(params as *mut FunctionCfg<F, T>) };
-    let res = (f.objective_fn)(argument, gradient, &mut f.user_data);
-    // Important: we don't want f to get dropped at this point
-    std::mem::forget(f);
-    res
+    (f.objective_fn)(argument, gradient, &mut f.user_data)
 }
 
 extern "C" fn constraint_raw_callback<F: ObjFn<T>, T>(
@@ -164,10 +166,7 @@ extern "C" fn constraint_raw_callback<F: ObjFn<T>, T>(
     } else {
         Some(unsafe { slice::from_raw_parts_mut(g, n as usize) })
     };
-    let res = (f.objective_fn)(argument, gradient, &mut f.user_data);
-    // Important: we don't want f to get dropped at this point
-    std::mem::forget(f);
-    res
+    (f.objective_fn)(argument, gradient, &mut f.user_data)
 }
 
 extern "C" fn mfunction_raw_callback<F: MObjFn<T>, T>(
@@ -187,8 +186,6 @@ extern "C" fn mfunction_raw_callback<F: MObjFn<T>, T>(
         Some(unsafe { slice::from_raw_parts_mut(g, (n as usize) * (m as usize)) })
     };
     (f.constraint)(re, argument, gradient, &mut f.user_data);
-    // Important: we don't want f to get dropped at this point
-    std::mem::forget(f);
 }
 
 /// A trait representing an objective function.
@@ -233,17 +230,29 @@ struct MConstraintCfg<F: MObjFn<T>, T> {
     user_data: T,
 }
 
+// We wrap sys::nlopt_opt in this wrapper to ensure it is correctly
+// cleaned up when dropped
+struct WrapSysNlopt(sys::nlopt_opt);
+
+impl Drop for WrapSysNlopt {
+    fn drop(&mut self) {
+        unsafe {
+            sys::nlopt_destroy(self.0);
+        };
+    }
+}
+
 /// This is the central ```struct``` of this library. It represents an optimization of a given
 /// function, called the objective function. The argument `x` to this function is an
 /// `n`-dimensional double-precision vector. The dimensions are set at creation of the struct and
 /// cannot be changed afterwards. NLopt offers different optimization algorithms. One must be
 /// chosen at struct creation and cannot be changed afterwards. Always use ```Nlopt::<T>::new()``` to create an `Nlopt` struct.
 pub struct Nlopt<F: ObjFn<T>, T> {
-    _algorithm: Algorithm,
-    pub n_dims: usize,
+    algorithm: Algorithm,
+    n_dims: usize,
     target: Target,
-    nloptc_obj: sys::nlopt_opt,
-    func_phantom: PhantomData<(F, T)>,
+    nloptc_obj: WrapSysNlopt,
+    func_cfg: Box<FunctionCfg<F, T>>,
 }
 
 impl<F: ObjFn<T>, T> Nlopt<F, T> {
@@ -275,36 +284,51 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
         // We allocation our FunctionCfg on the heap and pass a pointer to the C lib
         // (This is pretty unsafe but works).
         // `into_raw` will leak the boxed object
-        let fn_cfg = Box::new(FunctionCfg {
+        let func_cfg = Box::new(FunctionCfg {
             objective_fn,
             user_data, // move user_data into FunctionCfg
         });
 
-        let fn_cfg_ptr = Box::into_raw(fn_cfg) as *mut c_void;
+        let fn_cfg_ptr = &*func_cfg as *const _ as *mut c_void;
         let nlopt = Nlopt {
-            _algorithm: algorithm,
-            n_dims: n_dims,
+            algorithm,
+            n_dims,
             target,
-            nloptc_obj,
-            func_phantom: PhantomData,
+            nloptc_obj: WrapSysNlopt(nloptc_obj),
+            func_cfg,
         };
         match target {
             Target::Minimize => unsafe {
                 sys::nlopt_set_min_objective(
-                    nlopt.nloptc_obj,
+                    nlopt.nloptc_obj.0,
                     Some(function_raw_callback::<F, T>),
                     fn_cfg_ptr,
                 )
             },
             Target::Maximize => unsafe {
                 sys::nlopt_set_max_objective(
-                    nlopt.nloptc_obj,
+                    nlopt.nloptc_obj.0,
                     Some(function_raw_callback::<F, T>),
                     fn_cfg_ptr,
                 )
             },
         };
         nlopt
+    }
+
+    /// Retrive chosen algorithm
+    pub fn get_algorithm(&self) -> Algorithm {
+        self.algorithm
+    }
+
+    /// Consume the struct and recover the user data that was passed into
+    /// the constructor.
+    ///
+    /// Useful if you wish to collect information during
+    /// the optimization process - for example, pass in some kind of `Statistics`
+    /// object, mutate it inside the objective function, then recover it.
+    pub fn recover_user_data(self) -> T {
+        self.func_cfg.user_data
     }
 
     /// Most of the algorithms in NLopt are designed for minimization of functions with simple bound
@@ -335,12 +359,16 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// global-optimization algorithms, do not support unconstrained optimization and will return an
     /// error in `optimize` if you do not supply finite lower and upper bounds.
     pub fn set_lower_bounds(&mut self, bound: &[f64]) -> OptResult {
-        result_from_outcome(unsafe { sys::nlopt_set_lower_bounds(self.nloptc_obj, bound.as_ptr()) })
+        result_from_outcome(unsafe {
+            sys::nlopt_set_lower_bounds(self.nloptc_obj.0, bound.as_ptr())
+        })
     }
 
     /// See documentation for `set_lower_bounds`
     pub fn set_upper_bounds(&mut self, bound: &[f64]) -> OptResult {
-        result_from_outcome(unsafe { sys::nlopt_set_upper_bounds(self.nloptc_obj, bound.as_ptr()) })
+        result_from_outcome(unsafe {
+            sys::nlopt_set_upper_bounds(self.nloptc_obj.0, bound.as_ptr())
+        })
     }
 
     /// For convenience, `set_lower_bound` is supplied in order to set the lower
@@ -359,10 +387,10 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
 
     /// Retrieve the current upper bonds on `x`
     pub fn get_upper_bounds(&self) -> Option<&[f64]> {
-        let mut bound: Vec<f64> = vec![0.0 as f64; self.n_dims];
+        let mut bound: Vec<f64> = vec![0.0_f64; self.n_dims];
         let b = bound.as_mut_ptr();
         unsafe {
-            let ret = sys::nlopt_get_upper_bounds(self.nloptc_obj, b as *mut f64);
+            let ret = sys::nlopt_get_upper_bounds(self.nloptc_obj.0, b as *mut f64);
             match ret {
                 x if x < 0 => None,
                 _ => Some(slice::from_raw_parts(b as *mut f64, self.n_dims)),
@@ -372,10 +400,10 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
 
     /// Retrieve the current lower bonds on `x`
     pub fn get_lower_bounds(&self) -> Option<&[f64]> {
-        let mut bound: Vec<f64> = vec![0.0 as f64; self.n_dims];
+        let mut bound: Vec<f64> = vec![0.0_f64; self.n_dims];
         let b = bound.as_mut_ptr();
         unsafe {
-            let ret = sys::nlopt_get_lower_bounds(self.nloptc_obj, b as *mut f64);
+            let ret = sys::nlopt_get_lower_bounds(self.nloptc_obj.0, b as *mut f64);
             match ret {
                 x if x < 0 => None,
                 _ => Some(slice::from_raw_parts(b as *mut f64, self.n_dims)),
@@ -433,14 +461,14 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
         let outcome = unsafe {
             if is_equality {
                 sys::nlopt_add_equality_constraint(
-                    self.nloptc_obj,
+                    self.nloptc_obj.0,
                     Some(constraint_raw_callback::<G, U>),
                     ptr,
                     tolerance,
                 )
             } else {
                 sys::nlopt_add_inequality_constraint(
-                    self.nloptc_obj,
+                    self.nloptc_obj.0,
                     Some(constraint_raw_callback::<G, U>),
                     ptr,
                     tolerance,
@@ -498,7 +526,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
         let outcome = unsafe {
             if is_equality {
                 sys::nlopt_add_equality_mconstraint(
-                    self.nloptc_obj,
+                    self.nloptc_obj.0,
                     m as c_uint,
                     Some(mfunction_raw_callback::<G, U>),
                     ptr,
@@ -506,7 +534,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
                 )
             } else {
                 sys::nlopt_add_inequality_mconstraint(
-                    self.nloptc_obj,
+                    self.nloptc_obj.0,
                     m as c_uint,
                     Some(mfunction_raw_callback::<G, U>),
                     ptr,
@@ -522,8 +550,8 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     pub fn remove_constraints(&mut self) -> OptResult {
         result_from_outcome(unsafe {
             std::cmp::min(
-                sys::nlopt_remove_inequality_constraints(self.nloptc_obj),
-                sys::nlopt_remove_equality_constraints(self.nloptc_obj),
+                sys::nlopt_remove_inequality_constraints(self.nloptc_obj.0),
+                sys::nlopt_remove_equality_constraints(self.nloptc_obj.0),
             )
         })
     }
@@ -541,11 +569,11 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// This functions specifies a stop when an objective value of at least `stopval` is found: stop minimizing when an objective
     /// `value ≤ stopval` is found, or stop maximizing a `value ≥ stopval` is found.
     pub fn set_stopval(&mut self, stopval: f64) -> OptResult {
-        result_from_outcome(unsafe { sys::nlopt_set_stopval(self.nloptc_obj, stopval) })
+        result_from_outcome(unsafe { sys::nlopt_set_stopval(self.nloptc_obj.0, stopval) })
     }
 
     pub fn get_stopval(&self) -> f64 {
-        unsafe { sys::nlopt_get_stopval(self.nloptc_obj) }
+        unsafe { sys::nlopt_get_stopval(self.nloptc_obj.0) }
     }
 
     /// Set relative tolerance on function value: stop when an optimization step (or an estimate of
@@ -554,12 +582,12 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// value is close to zero, you might want to set an absolute tolerance with `set_ftol_abs`
     /// as well.) Criterion is disabled if `tolerance` is non-positive.
     pub fn set_ftol_rel(&mut self, tolerance: f64) -> OptResult {
-        result_from_outcome(unsafe { sys::nlopt_set_ftol_rel(self.nloptc_obj, tolerance) })
+        result_from_outcome(unsafe { sys::nlopt_set_ftol_rel(self.nloptc_obj.0, tolerance) })
     }
 
     pub fn get_ftol_rel(&self) -> Option<f64> {
         unsafe {
-            match sys::nlopt_get_ftol_rel(self.nloptc_obj) {
+            match sys::nlopt_get_ftol_rel(self.nloptc_obj.0) {
                 x if x < 0.0 => None,
                 x => Some(x),
             }
@@ -571,11 +599,11 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// Criterion is disabled if `tolerance` is
     /// non-positive.
     pub fn set_ftol_abs(&mut self, tolerance: f64) -> OptResult {
-        result_from_outcome(unsafe { sys::nlopt_set_ftol_abs(self.nloptc_obj, tolerance) })
+        result_from_outcome(unsafe { sys::nlopt_set_ftol_abs(self.nloptc_obj.0, tolerance) })
     }
 
     pub fn get_ftol_abs(&self) -> Option<f64> {
-        match unsafe { sys::nlopt_get_ftol_abs(self.nloptc_obj) } {
+        match unsafe { sys::nlopt_get_ftol_abs(self.nloptc_obj.0) } {
             x if x < 0.0 => None,
             x => Some(x),
         }
@@ -588,11 +616,11 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// you might want to set an absolute tolerance with `set_xtol_abs` as well.) Criterion is
     /// disabled if `tolerance` is non-positive.
     pub fn set_xtol_rel(&mut self, tolerance: f64) -> OptResult {
-        result_from_outcome(unsafe { sys::nlopt_set_xtol_rel(self.nloptc_obj, tolerance) })
+        result_from_outcome(unsafe { sys::nlopt_set_xtol_rel(self.nloptc_obj.0, tolerance) })
     }
 
     pub fn get_xtol_rel(&self) -> Option<f64> {
-        match unsafe { sys::nlopt_get_xtol_rel(self.nloptc_obj) } {
+        match unsafe { sys::nlopt_get_xtol_rel(self.nloptc_obj.0) } {
             x if x < 0.0 => None,
             x => Some(x),
         }
@@ -602,7 +630,9 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// giving the tolerances: stop when an optimization step (or
     /// an estimate of the optimum) changes every parameter `x[i]` by less than `tolerance[i]`.
     pub fn set_xtol_abs(&mut self, tolerance: &[f64]) -> OptResult {
-        result_from_outcome(unsafe { sys::nlopt_set_xtol_abs(self.nloptc_obj, tolerance.as_ptr()) })
+        result_from_outcome(unsafe {
+            sys::nlopt_set_xtol_abs(self.nloptc_obj.0, tolerance.as_ptr())
+        })
     }
 
     /// For convenience, this function may be used to set the absolute tolerances in all `n`
@@ -613,9 +643,9 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     }
 
     pub fn get_xtol_abs(&mut self) -> Option<&[f64]> {
-        let mut tol: Vec<f64> = vec![0.0 as f64; self.n_dims];
+        let mut tol: Vec<f64> = vec![0.0_f64; self.n_dims];
         let b = tol.as_mut_ptr();
-        let ret = unsafe { sys::nlopt_get_xtol_abs(self.nloptc_obj, b as *mut f64) };
+        let ret = unsafe { sys::nlopt_get_xtol_abs(self.nloptc_obj.0, b as *mut f64) };
         match ret {
             x if x < 0 => None,
             _ => Some(unsafe { slice::from_raw_parts(b as *mut f64, self.n_dims) }),
@@ -626,11 +656,11 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// the number of function evaluations may exceed `maxeval` slightly, depending upon the
     /// algorithm.) Criterion is disabled if `maxeval` is non-positive.
     pub fn set_maxeval(&mut self, maxeval: u32) -> OptResult {
-        result_from_outcome(unsafe { sys::nlopt_set_maxeval(self.nloptc_obj, maxeval as i32) })
+        result_from_outcome(unsafe { sys::nlopt_set_maxeval(self.nloptc_obj.0, maxeval as i32) })
     }
 
     pub fn get_maxeval(&mut self) -> Option<u32> {
-        match unsafe { sys::nlopt_get_maxeval(self.nloptc_obj) } {
+        match unsafe { sys::nlopt_get_maxeval(self.nloptc_obj.0) } {
             x if x < 0 => None,
             x => Some(x as u32),
         }
@@ -640,11 +670,11 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// the time may exceed `maxtime` slightly, depending upon the algorithm and on how slow your
     /// function evaluation is.) Criterion is disabled if `maxtime` is non-positive.
     pub fn set_maxtime(&mut self, timeout: f64) -> OptResult {
-        result_from_outcome(unsafe { sys::nlopt_set_maxtime(self.nloptc_obj, timeout) })
+        result_from_outcome(unsafe { sys::nlopt_set_maxtime(self.nloptc_obj.0, timeout) })
     }
 
     pub fn get_maxtime(&self) -> Option<f64> {
-        match unsafe { sys::nlopt_get_maxtime(self.nloptc_obj) } {
+        match unsafe { sys::nlopt_get_maxtime(self.nloptc_obj.0) } {
             x if x < 0.0 => None,
             x => Some(x),
         }
@@ -667,14 +697,14 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     pub fn force_stop(&mut self, stopval: Option<i32>) -> OptResult {
         result_from_outcome(unsafe {
             match stopval {
-                Some(x) => sys::nlopt_set_force_stop(self.nloptc_obj, x),
-                None => sys::nlopt_force_stop(self.nloptc_obj),
+                Some(x) => sys::nlopt_set_force_stop(self.nloptc_obj.0, x),
+                None => sys::nlopt_force_stop(self.nloptc_obj.0),
             }
         })
     }
 
     pub fn get_force_stop(&mut self) -> Option<i32> {
-        match unsafe { sys::nlopt_get_force_stop(self.nloptc_obj) } {
+        match unsafe { sys::nlopt_get_force_stop(self.nloptc_obj.0) } {
             0 => None,
             x => Some(x),
         }
@@ -692,7 +722,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// A stubbed version of `local_opt` can be obtained with `get_local_optimizer`.
     pub fn set_local_optimizer(&mut self, local_opt: Nlopt<impl ObjFn<()>, ()>) -> OptResult {
         result_from_outcome(unsafe {
-            sys::nlopt_set_local_optimizer(self.nloptc_obj, local_opt.nloptc_obj)
+            sys::nlopt_set_local_optimizer(self.nloptc_obj.0, local_opt.nloptc_obj.0)
         })
     }
 
@@ -716,7 +746,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// convenience, if you want to set the step sizes in every direction to be the same value, you
     /// can instead call `set_initial_step1`.
     pub fn set_initial_step(&mut self, dx: &[f64]) -> OptResult {
-        result_from_outcome(unsafe { sys::nlopt_set_initial_step(self.nloptc_obj, dx.as_ptr()) })
+        result_from_outcome(unsafe { sys::nlopt_set_initial_step(self.nloptc_obj.0, dx.as_ptr()) })
     }
 
     pub fn set_initial_step1(&mut self, dx: f64) -> OptResult {
@@ -730,10 +760,10 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// and the return value are arrays of
     /// length `n`.
     pub fn get_initial_step(&mut self, x: &[f64]) -> Option<&[f64]> {
-        let mut dx: Vec<f64> = vec![0.0 as f64; self.n_dims];
+        let mut dx: Vec<f64> = vec![0.0_f64; self.n_dims];
         unsafe {
             let b = dx.as_mut_ptr();
-            let ret = sys::nlopt_get_initial_step(self.nloptc_obj, x.as_ptr(), b as *mut f64);
+            let ret = sys::nlopt_get_initial_step(self.nloptc_obj.0, x.as_ptr(), b as *mut f64);
             match ret {
                 x if x < 0 => None,
                 _ => Some(slice::from_raw_parts(b as *mut f64, self.n_dims)),
@@ -749,12 +779,12 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// that the heuristic default will be used.
     pub fn set_population(&mut self, population: usize) -> OptResult {
         result_from_outcome(unsafe {
-            sys::nlopt_set_population(self.nloptc_obj, population as u32)
+            sys::nlopt_set_population(self.nloptc_obj.0, population as u32)
         })
     }
 
     pub fn get_population(&mut self) -> usize {
-        unsafe { sys::nlopt_get_population(self.nloptc_obj) as usize }
+        unsafe { sys::nlopt_get_population(self.nloptc_obj.0) as usize }
     }
 
     // Pseudorandom Numbers
@@ -784,14 +814,14 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// sets M to 10 or at most 10 MiB worth of vectors, whichever is larger.
     pub fn set_vector_storage(&mut self, m: Option<usize>) -> OptResult {
         let outcome = match m {
-            None => unsafe { sys::nlopt_set_vector_storage(self.nloptc_obj, 0 as u32) },
-            Some(x) => unsafe { sys::nlopt_set_vector_storage(self.nloptc_obj, x as u32) },
+            None => unsafe { sys::nlopt_set_vector_storage(self.nloptc_obj.0, 0_u32) },
+            Some(x) => unsafe { sys::nlopt_set_vector_storage(self.nloptc_obj.0, x as u32) },
         };
         result_from_outcome(outcome)
     }
 
     pub fn get_vector_storage(&mut self) -> usize {
-        unsafe { sys::nlopt_get_vector_storage(self.nloptc_obj) as usize }
+        unsafe { sys::nlopt_get_vector_storage(self.nloptc_obj.0) as usize }
     }
 
     // Preconditioning TODO --> this is somewhat complex but not overly so.
@@ -818,19 +848,10 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     pub fn optimize(&self, x_init: &mut [f64]) -> Result<(SuccessState, f64), (FailState, f64)> {
         let mut min_value: f64 = 0.0;
         let res =
-            unsafe { sys::nlopt_optimize(self.nloptc_obj, x_init.as_mut_ptr(), &mut min_value) };
+            unsafe { sys::nlopt_optimize(self.nloptc_obj.0, x_init.as_mut_ptr(), &mut min_value) };
         result_from_outcome(res)
             .map(|s| (s, min_value))
             .map_err(|e| (e, min_value))
-    }
-}
-
-impl<F: ObjFn<T>, T> Drop for Nlopt<F, T> {
-    fn drop(&mut self) {
-        // TODO should also drop the Function obj else it leaks
-        unsafe {
-            sys::nlopt_destroy(self.nloptc_obj);
-        };
     }
 }
 
@@ -857,9 +878,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use approx::assert_abs_diff_eq;
-
     use super::*;
+    use approx::assert_abs_diff_eq;
 
     #[test]
     fn test_approx_gradient() {
@@ -1050,5 +1070,65 @@ mod tests {
         let mut input = vec![1., 1.];
         let (_s, v) = opt.optimize(&mut input).unwrap();
         assert_eq!(v, 1.3934648637383988); // don't really know if this is the right answer...
+    }
+
+    #[test]
+    fn test_cobyla_with_no_memory_leaks() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        fn objfn(x: &[f64], _grad: Option<&mut [f64]>, call_ct: &mut Rc<Cell<u32>>) -> f64 {
+            let v: u32 = call_ct.get();
+            call_ct.set(v + 1);
+            let x = x[0];
+            (x - 3.0) * (x - 3.0) + 7.0 // min = 7 @ x = 3
+        }
+        let user_data = Rc::new(Cell::new(0));
+        let mut nlopt = Nlopt::new(
+            Algorithm::Cobyla,
+            1,
+            objfn,
+            Target::Minimize,
+            user_data.clone(),
+        );
+        nlopt.set_xtol_abs1(1e-15).unwrap();
+        let mut input = [0.0];
+        let (_s, v) = nlopt.optimize(&mut input).unwrap();
+        assert_eq!(input[0], 3.0);
+        assert_eq!(v, 7.0);
+        // when we drop the object, destructor should run as normal
+        // and refcount is decremented
+        assert_eq!(Rc::strong_count(&user_data), 2);
+        drop(nlopt);
+        assert_eq!(Rc::strong_count(&user_data), 1);
+    }
+
+    #[test]
+    fn test_neldermead_recover_user_data() {
+        struct WrapU32(u32);
+        impl Drop for WrapU32 {
+            fn drop(&mut self) {
+                // panic!("undroppable")
+            }
+        }
+        fn objfn(x: &[f64], _grad: Option<&mut [f64]>, call_ct: &mut WrapU32) -> f64 {
+            call_ct.0 += 1;
+            let x = x[0];
+            (x - 5.0) * (x - 5.0) + 9.0 // min = 9 @ x = 5
+        }
+        let mut nlopt = Nlopt::new(
+            Algorithm::Neldermead,
+            1,
+            objfn,
+            Target::Minimize,
+            WrapU32(0),
+        );
+        nlopt.set_xtol_abs1(1e-15).unwrap();
+        let mut input = [0.0];
+        let (_s, v) = nlopt.optimize(&mut input).unwrap();
+        assert_eq!(input[0], 4.999999970199497);
+        assert_eq!(v, 9.0);
+        let call_ct = nlopt.recover_user_data();
+        assert_eq!(call_ct.0, 101);
+        std::mem::forget(call_ct);
     }
 }

@@ -1,7 +1,5 @@
-use std::env;
-
 fn main() {
-    let dst = cmake::Config::new("./nlopt-2.5.0")
+    let dst = cmake::Config::new("./nlopt-2.7.1")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("CMAKE_CXX_COMPILER", "c++")
         .define("NLOPT_CXX", "OFF")
@@ -15,7 +13,5 @@ fn main() {
     // Lib could be in either of two locations
     println!("cargo:rustc-link-search=native={}/lib", dst.display());
     println!("cargo:rustc-link-search=native={}/lib64", dst.display());
-    if env::var("CARGO_CFG_TARGET_ENV").unwrap() == "msvc" {
-        println!("cargo:rustc-link-lib=static=nlopt");
-    }
+    println!("cargo:rustc-link-lib=static=nlopt");
 }
