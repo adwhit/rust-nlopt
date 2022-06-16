@@ -289,7 +289,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
         let fn_cfg_ptr = Box::into_raw(fn_cfg) as *mut c_void;
         let nlopt = Nlopt {
             _algorithm: algorithm,
-            n_dims: n_dims,
+            n_dims,
             target,
             nloptc_obj,
             func_phantom: PhantomData,
@@ -365,7 +365,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
 
     /// Retrieve the current upper bonds on `x`
     pub fn get_upper_bounds(&self) -> Option<&[f64]> {
-        let mut bound: Vec<f64> = vec![0.0 as f64; self.n_dims];
+        let mut bound: Vec<f64> = vec![0.0_f64; self.n_dims];
         let b = bound.as_mut_ptr();
         unsafe {
             let ret = sys::nlopt_get_upper_bounds(self.nloptc_obj, b as *mut f64);
@@ -378,7 +378,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
 
     /// Retrieve the current lower bonds on `x`
     pub fn get_lower_bounds(&self) -> Option<&[f64]> {
-        let mut bound: Vec<f64> = vec![0.0 as f64; self.n_dims];
+        let mut bound: Vec<f64> = vec![0.0_f64; self.n_dims];
         let b = bound.as_mut_ptr();
         unsafe {
             let ret = sys::nlopt_get_lower_bounds(self.nloptc_obj, b as *mut f64);
@@ -619,7 +619,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     }
 
     pub fn get_xtol_abs(&mut self) -> Option<&[f64]> {
-        let mut tol: Vec<f64> = vec![0.0 as f64; self.n_dims];
+        let mut tol: Vec<f64> = vec![0.0_f64; self.n_dims];
         let b = tol.as_mut_ptr();
         let ret = unsafe { sys::nlopt_get_xtol_abs(self.nloptc_obj, b as *mut f64) };
         match ret {
@@ -736,7 +736,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// and the return value are arrays of
     /// length `n`.
     pub fn get_initial_step(&mut self, x: &[f64]) -> Option<&[f64]> {
-        let mut dx: Vec<f64> = vec![0.0 as f64; self.n_dims];
+        let mut dx: Vec<f64> = vec![0.0_f64; self.n_dims];
         unsafe {
             let b = dx.as_mut_ptr();
             let ret = sys::nlopt_get_initial_step(self.nloptc_obj, x.as_ptr(), b as *mut f64);
@@ -790,7 +790,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// sets M to 10 or at most 10 MiB worth of vectors, whichever is larger.
     pub fn set_vector_storage(&mut self, m: Option<usize>) -> OptResult {
         let outcome = match m {
-            None => unsafe { sys::nlopt_set_vector_storage(self.nloptc_obj, 0 as u32) },
+            None => unsafe { sys::nlopt_set_vector_storage(self.nloptc_obj, 0_u32) },
             Some(x) => unsafe { sys::nlopt_set_vector_storage(self.nloptc_obj, x as u32) },
         };
         result_from_outcome(outcome)
