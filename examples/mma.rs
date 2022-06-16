@@ -19,9 +19,7 @@ fn myfunc(x: &[f64], grad: Option<&mut [f64]>, _param: &mut ()) -> f64 {
 }
 
 // the constraint function.
-fn myconstraint(
-    x: &[f64], grad: Option<&mut [f64]>, data: &mut [f64; 2],
-) -> f64 {
+fn myconstraint(x: &[f64], grad: Option<&mut [f64]>, data: &mut [f64; 2]) -> f64 {
     let a = data[0];
     let b = data[1];
 
