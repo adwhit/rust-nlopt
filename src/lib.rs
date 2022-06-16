@@ -12,6 +12,7 @@ use self::nlopt_sys as sys;
 
 #[allow(non_camel_case_types)]
 #[allow(non_upper_case_globals)]
+#[allow(dead_code)]
 mod nlopt_sys;
 
 /// Target object function state
@@ -41,6 +42,9 @@ pub enum Algorithm {
     GnMlslLds = sys::nlopt_algorithm_NLOPT_GN_MLSL_LDS,
     GdMlslLds = sys::nlopt_algorithm_NLOPT_GD_MLSL_LDS,
 
+    // TODO I think these only exist when compiled with
+    // C++ (which currently is disabled by build.rs)
+    // so ... check and possibly disable?
     StoGo = sys::nlopt_algorithm_NLOPT_GD_STOGO,
     StoGoRand = sys::nlopt_algorithm_NLOPT_GD_STOGO_RAND,
     Isres = sys::nlopt_algorithm_NLOPT_GN_ISRES,
@@ -75,6 +79,8 @@ pub enum Algorithm {
     LnAuglagEq = sys::nlopt_algorithm_NLOPT_LN_AUGLAG_EQ,
 
     Ccsaq = sys::nlopt_algorithm_NLOPT_LD_CCSAQ,
+
+    Ags = sys::nlopt_algorithm_NLOPT_GN_AGS,
 }
 
 #[repr(i32)]
