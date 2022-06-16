@@ -1,6 +1,6 @@
 [package]
 name = "nlopt"
-version = "0.5.4"
+version = "0.6.0"
 authors = ["Lucas L. Treffenstädt <lucas@treffenstaedt.de>", "Alex Whitney <adwhit@fastmail.com>"]
 description = "Wrapper for the nlopt library"
 license = "MIT"
