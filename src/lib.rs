@@ -1107,7 +1107,7 @@ mod tests {
         struct WrapU32(u32);
         impl Drop for WrapU32 {
             fn drop(&mut self) {
-                // panic!("undroppable")
+                panic!("undroppable")
             }
         }
         fn objfn(x: &[f64], _grad: Option<&mut [f64]>, call_ct: &mut WrapU32) -> f64 {
