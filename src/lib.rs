@@ -211,7 +211,7 @@ type ConstraintCfg<F, T> = FunctionCfg<F, T>;
 
 /// A trait representing a multi-objective function.
 ///
-/// A multi-objective function takes the form of a closure `f(result: &mut [f64], x: &[f64], gradient: Option<&mut [f64], user_data: &mut U) -> f64`
+/// A multi-objective function takes the form of a closure `f(result: &mut [f64], x: &[f64], gradient: Option<&mut [f64], user_data: &mut U)`
 ///
 /// * `result` - `m`-dimensional array to store the value `f(x)`
 /// * `x` - `n`-dimensional array
