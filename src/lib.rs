@@ -386,29 +386,19 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     }
 
     /// Retrieve the current upper bonds on `x`
-    pub fn get_upper_bounds(&self) -> Option<&[f64]> {
+    pub fn get_upper_bounds(&self) -> Option<Vec<f64>> {
         let mut bound: Vec<f64> = vec![0.0_f64; self.n_dims];
         let b = bound.as_mut_ptr();
-        unsafe {
-            let ret = sys::nlopt_get_upper_bounds(self.nloptc_obj.0, b as *mut f64);
-            match ret {
-                x if x < 0 => None,
-                _ => Some(slice::from_raw_parts(b as *mut f64, self.n_dims)),
-            }
-        }
+        let res = unsafe { sys::nlopt_get_upper_bounds(self.nloptc_obj.0, b as *mut f64) };
+        result_from_outcome(res).ok().map(|_| bound)
     }
 
     /// Retrieve the current lower bonds on `x`
-    pub fn get_lower_bounds(&self) -> Option<&[f64]> {
+    pub fn get_lower_bounds(&self) -> Option<Vec<f64>> {
         let mut bound: Vec<f64> = vec![0.0_f64; self.n_dims];
         let b = bound.as_mut_ptr();
-        unsafe {
-            let ret = sys::nlopt_get_lower_bounds(self.nloptc_obj.0, b as *mut f64);
-            match ret {
-                x if x < 0 => None,
-                _ => Some(slice::from_raw_parts(b as *mut f64, self.n_dims)),
-            }
-        }
+        let res = unsafe { sys::nlopt_get_lower_bounds(self.nloptc_obj.0, b as *mut f64) };
+        result_from_outcome(res).ok().map(|_| bound)
     }
 
     /// Several of the algorithms in NLopt (MMA, COBYLA, and ORIG_DIRECT) also support arbitrary
@@ -642,14 +632,11 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
         self.set_xtol_abs(tol)
     }
 
-    pub fn get_xtol_abs(&mut self) -> Option<&[f64]> {
+    pub fn get_xtol_abs(&mut self) -> Option<Vec<f64>> {
         let mut tol: Vec<f64> = vec![0.0_f64; self.n_dims];
         let b = tol.as_mut_ptr();
-        let ret = unsafe { sys::nlopt_get_xtol_abs(self.nloptc_obj.0, b as *mut f64) };
-        match ret {
-            x if x < 0 => None,
-            _ => Some(unsafe { slice::from_raw_parts(b as *mut f64, self.n_dims) }),
-        }
+        let res = unsafe { sys::nlopt_get_xtol_abs(self.nloptc_obj.0, b as *mut f64) };
+        result_from_outcome(res).ok().map(|_| tol)
     }
 
     /// Stop when the number of function evaluations exceeds `maxeval`. (This is not a strict maximum:
@@ -759,16 +746,12 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// depend on the initial `x`, which is why you must pass it here. Both `x`
     /// and the return value are arrays of
     /// length `n`.
-    pub fn get_initial_step(&mut self, x: &[f64]) -> Option<&[f64]> {
+    pub fn get_initial_step(&mut self, x: &[f64]) -> Option<Vec<f64>> {
         let mut dx: Vec<f64> = vec![0.0_f64; self.n_dims];
-        unsafe {
-            let b = dx.as_mut_ptr();
-            let ret = sys::nlopt_get_initial_step(self.nloptc_obj.0, x.as_ptr(), b as *mut f64);
-            match ret {
-                x if x < 0 => None,
-                _ => Some(slice::from_raw_parts(b as *mut f64, self.n_dims)),
-            }
-        }
+        let b = dx.as_mut_ptr();
+        let res =
+            unsafe { sys::nlopt_get_initial_step(self.nloptc_obj.0, x.as_ptr(), b as *mut f64) };
+        result_from_outcome(res).ok().map(|_| dx)
     }
 
     // Stochastic Population
@@ -949,11 +932,29 @@ mod tests {
         let xl = vec![2.0; 25];
         let xu = vec![4.0; 25];
 
+        // check bounds unset
+        assert!(opt
+            .get_upper_bounds()
+            .unwrap()
+            .into_iter()
+            .all(|v| v == f64::INFINITY));
+        assert!(opt
+            .get_lower_bounds()
+            .unwrap()
+            .into_iter()
+            .all(|v| v == f64::NEG_INFINITY));
+
+        // set the bounds
         opt.set_upper_bounds(&xu).unwrap();
         opt.set_lower_bounds(&xl).unwrap();
+        // set it twice, why not
         opt.set_lower_bounds(&xl).unwrap();
-        opt.set_xtol_rel(1e-8).unwrap();
 
+        // check the bounds were set
+        assert_eq!(opt.get_upper_bounds().unwrap(), xu);
+        assert_eq!(opt.get_lower_bounds().unwrap(), xl);
+
+        opt.set_xtol_rel(1e-8).unwrap();
         let mut expect = vec![2.0; 25];
         expect[23] = 2.1090933511928247;
         expect[24] = 4.;
@@ -978,6 +979,10 @@ mod tests {
             |x: &[f64], _: Option<&mut [f64]>, _: &mut ()| objfn(x),
             Target::Maximize,
             (),
+        );
+        assert_eq!(
+            opt.get_upper_bounds().unwrap(),
+            &[f64::INFINITY, f64::INFINITY]
         );
         let mut input = vec![3.0, -2.0];
         let (_s, val) = opt.optimize(&mut input).unwrap();
@@ -1005,6 +1010,15 @@ mod tests {
         opt.add_inequality_constraint(hin, (), 1e-6).unwrap();
         opt.add_equality_constraint(heq, (), 1e-6).unwrap();
         opt.set_xtol_rel(1e-6).unwrap();
+
+        assert_eq!(
+            opt.get_upper_bounds().unwrap(),
+            &[f64::INFINITY, f64::INFINITY]
+        );
+        assert_eq!(
+            opt.get_lower_bounds().unwrap(),
+            &[f64::NEG_INFINITY, f64::NEG_INFINITY]
+        );
 
         let mut local_opt = opt.get_local_optimizer(Algorithm::Cobyla);
         local_opt.set_xtol_rel(1e-6).unwrap();
@@ -1064,7 +1078,11 @@ mod tests {
         opt.set_xtol_rel(1e-6).unwrap();
 
         let mut local_opt = opt.get_local_optimizer(Algorithm::Bobyqa);
+
+        assert_eq!(local_opt.get_xtol_rel().unwrap(), 0.0);
         local_opt.set_xtol_rel(1e-6).unwrap();
+        assert_eq!(local_opt.get_xtol_rel().unwrap(), 1e-6);
+
         opt.set_local_optimizer(local_opt).unwrap();
 
         let mut input = vec![1., 1.];
@@ -1090,7 +1108,11 @@ mod tests {
             Target::Minimize,
             user_data.clone(),
         );
+
+        assert_eq!(nlopt.get_xtol_abs().unwrap(), &[0.0]);
         nlopt.set_xtol_abs1(1e-15).unwrap();
+        assert_eq!(nlopt.get_xtol_abs().unwrap(), &[1e-15]);
+
         let mut input = [0.0];
         let (_s, v) = nlopt.optimize(&mut input).unwrap();
         assert_eq!(input[0], 3.0);
