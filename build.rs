@@ -1,5 +1,5 @@
 fn main() {
-    let dst = cmake::Config::new("./nlopt-2.7.1")
+    let dst = cmake::Config::new("./nlopt-2.9.1")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("CMAKE_CXX_COMPILER", "c++")
         .define("NLOPT_CXX", "OFF")

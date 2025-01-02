@@ -32,5 +32,5 @@ This library was originally forked from <https://github.com/mithodin/rust-nlopt>
 The Rust code is licensed under MIT.
 
 For convenience, this crate bundles `nlopt` and links it statically. This may have
-licensing implications so I refer the user to the [bundled license](nlopt-2.5.0/COPYING)
+licensing implications so I refer the user to the [bundled license](nlopt-2.9.1/COPYING)
 for more information.
