@@ -60,7 +60,6 @@ pub enum Algorithm {
     Mma = sys::nlopt_algorithm_NLOPT_LD_MMA,
     Slsqp = sys::nlopt_algorithm_NLOPT_LD_SLSQP,
     Lbfgs = sys::nlopt_algorithm_NLOPT_LD_LBFGS,
-    LbfgsNocedal = sys::nlopt_algorithm_NLOPT_LD_LBFGS_NOCEDAL,
 
     LdVar1 = sys::nlopt_algorithm_NLOPT_LD_VAR1,
     LdVar2 = sys::nlopt_algorithm_NLOPT_LD_VAR2,
