@@ -4,6 +4,7 @@
 //! algorithms. For details of the various algorithms,
 //! consult the [nlopt docs](https://nlopt.readthedocs.io/en/latest/NLopt_Algorithms/)
 
+use std::marker::PhantomData;
 use std::os::raw::{c_uint, c_ulong, c_void};
 use std::slice;
 
@@ -131,7 +132,7 @@ fn result_from_outcome(outcome: sys::nlopt_result) -> OptResult {
     }
 }
 
-extern "C" fn function_raw_callback<F: ObjFn<T>, T>(
+extern "C" fn function_raw_callback<F: ObjFn<T, R>, T, R: Termination>(
     n: c_uint,
     x: *const f64,
     g: *mut f64,
@@ -148,9 +149,14 @@ extern "C" fn function_raw_callback<F: ObjFn<T>, T>(
     // recover FunctionCfg object from supplied params and call
     let f = unsafe { &mut *(params as *mut FunctionCfg<F, T>) };
     (f.objective_fn)(argument, gradient, &mut f.user_data)
+        .result()
+        .unwrap_or_else(|e| {
+            unsafe { sys::nlopt_set_force_stop(f.obj, e) };
+            f64::INFINITY
+        })
 }
 
-extern "C" fn constraint_raw_callback<F: ObjFn<T>, T>(
+extern "C" fn constraint_raw_callback<F: ObjFn<T, R>, T, R: Termination>(
     n: c_uint,
     x: *const f64,
     g: *mut f64,
@@ -166,6 +172,11 @@ extern "C" fn constraint_raw_callback<F: ObjFn<T>, T>(
         Some(unsafe { slice::from_raw_parts_mut(g, n as usize) })
     };
     (f.objective_fn)(argument, gradient, &mut f.user_data)
+        .result()
+        .unwrap_or_else(|e| {
+            unsafe { sys::nlopt_set_force_stop(f.obj, e) };
+            f64::INFINITY
+        })
 }
 
 extern "C" fn mfunction_raw_callback<F: MObjFn<T>, T>(
@@ -187,6 +198,56 @@ extern "C" fn mfunction_raw_callback<F: MObjFn<T>, T>(
     (f.constraint)(re, argument, gradient, &mut f.user_data);
 }
 
+/// Trait for defining the result of a objective or constraint function
+///
+/// This is mainly used to allow to cancel the optimization from with in the [ObjFn] by returning
+/// a `None` or an `Err(Into<i32>)`. Note this trait is implemented for `f64` so you can also
+/// return costs regularly from your [ObjFn] if you don't need termination.
+///
+/// # Example
+/// ```
+/// use nlopt::{Nlopt, Target, Algorithm};
+///
+/// let mut opt = Nlopt::new(
+///     Algorithm::Mma,
+///     2,
+///     |x, _, _| {
+///         if x.iter().any(|x| *x > 17.) {
+///             // Cancel optimization by returning a `None`
+///             return None;
+///         }
+///         Some(x.iter().sum())
+///     },
+///     Target::Minimize,
+///     (),
+/// );
+///
+/// let mut x = [18., 9.];
+/// let res = opt.optimize(&mut x);
+/// assert!(res.is_err()); // FailState::ForceStop
+/// ```
+pub trait Termination {
+    fn result(self) -> Result<f64, i32>;
+}
+
+impl Termination for f64 {
+    fn result(self) -> Result<f64, i32> {
+        Ok(self)
+    }
+}
+
+impl Termination for Option<f64> {
+    fn result(self) -> Result<f64, i32> {
+        self.ok_or(sys::nlopt_result_NLOPT_FORCED_STOP)
+    }
+}
+
+impl<E: Into<i32>> Termination for Result<f64, E> {
+    fn result(self) -> Result<f64, i32> {
+        self.map_err(|e| e.into())
+    }
+}
+
 /// A trait representing an objective function.
 ///
 /// An objective function takes the form of a closure `f(x: &[f64], gradient: Option<&mut [f64], user_data: &mut U) -> f64`
@@ -196,14 +257,15 @@ extern "C" fn mfunction_raw_callback<F: MObjFn<T>, T>(
 /// `Some(x)`, the user is required to provide a gradient, otherwise the optimization will
 /// probabely fail.
 /// * `user_data` - user defined data
-pub trait ObjFn<U>: Fn(&[f64], Option<&mut [f64]>, &mut U) -> f64 {}
+pub trait ObjFn<U, R: Termination>: Fn(&[f64], Option<&mut [f64]>, &mut U) -> R {}
 
-impl<T, U> ObjFn<U> for T where T: Fn(&[f64], Option<&mut [f64]>, &mut U) -> f64 {}
+impl<T, U, R: Termination> ObjFn<U, R> for T where T: Fn(&[f64], Option<&mut [f64]>, &mut U) -> R {}
 
 /// Packs an objective function with a user defined parameter set of type `T`.
-struct FunctionCfg<F: ObjFn<T>, T> {
+struct FunctionCfg<F, T> {
     pub objective_fn: F,
     pub user_data: T,
+    pub obj: sys::nlopt_opt,
 }
 
 type ConstraintCfg<F, T> = FunctionCfg<F, T>;
@@ -246,15 +308,20 @@ impl Drop for WrapSysNlopt {
 /// `n`-dimensional double-precision vector. The dimensions are set at creation of the struct and
 /// cannot be changed afterwards. NLopt offers different optimization algorithms. One must be
 /// chosen at struct creation and cannot be changed afterwards. Always use ```Nlopt::<T>::new()``` to create an `Nlopt` struct.
-pub struct Nlopt<F: ObjFn<T>, T> {
+pub struct Nlopt<F, T, R = f64> {
     algorithm: Algorithm,
     n_dims: usize,
     target: Target,
     nloptc_obj: WrapSysNlopt,
     func_cfg: Box<FunctionCfg<F, T>>,
+    r: PhantomData<R>,
 }
 
-impl<F: ObjFn<T>, T> Nlopt<F, T> {
+impl<F, T, R> Nlopt<F, T, R>
+where
+    F: ObjFn<T, R>,
+    R: Termination,
+{
     /// Creates a new `Nlopt` struct.
     ///
     /// * `algorithm` - Which optimization algorithm to use. This cannot be changed after creation
@@ -274,7 +341,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
         objective_fn: F,
         target: Target,
         user_data: T,
-    ) -> Nlopt<F, T> {
+    ) -> Self {
         // TODO this might be better off as a builder pattern
         let nloptc_obj = unsafe { sys::nlopt_create(algorithm as u32, n_dims as u32) };
 
@@ -284,6 +351,7 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
         // (This is pretty unsafe but works).
         // `into_raw` will leak the boxed object
         let func_cfg = Box::new(FunctionCfg {
+            obj: nloptc_obj,
             objective_fn,
             user_data, // move user_data into FunctionCfg
         });
@@ -295,19 +363,20 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
             target,
             nloptc_obj: WrapSysNlopt(nloptc_obj),
             func_cfg,
+            r: PhantomData,
         };
         match target {
             Target::Minimize => unsafe {
                 sys::nlopt_set_min_objective(
                     nlopt.nloptc_obj.0,
-                    Some(function_raw_callback::<F, T>),
+                    Some(function_raw_callback::<F, T, R>),
                     fn_cfg_ptr,
                 )
             },
             Target::Maximize => unsafe {
                 sys::nlopt_set_max_objective(
                     nlopt.nloptc_obj.0,
-                    Some(function_raw_callback::<F, T>),
+                    Some(function_raw_callback::<F, T, R>),
                     fn_cfg_ptr,
                 )
             },
@@ -415,34 +484,47 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// satisfied;
     /// generally, at least a small positive tolerance is advisable to reduce sensitivity to
     /// rounding errors.
-    pub fn add_equality_constraint<G: ObjFn<U>, U>(
+    pub fn add_equality_constraint<G, U, S>(
         &mut self,
         constraint: G,
         user_data: U,
         tolerance: f64,
-    ) -> OptResult {
+    ) -> OptResult
+    where
+        G: ObjFn<U, S>,
+        S: Termination,
+    {
         self.add_constraint(constraint, user_data, tolerance, true)
     }
 
     /// Set a nonlinear constraint of the form `fc(x) ≤ 0`.
     /// For more information see the documentation for `add_equality_constraint`.
-    pub fn add_inequality_constraint<G: ObjFn<U>, U>(
+    pub fn add_inequality_constraint<G, U, S>(
         &mut self,
         constraint: G,
         user_data: U,
         tolerance: f64,
-    ) -> OptResult {
+    ) -> OptResult
+    where
+        G: ObjFn<U, S>,
+        S: Termination,
+    {
         self.add_constraint(constraint, user_data, tolerance, false)
     }
 
-    fn add_constraint<G: ObjFn<U>, U>(
+    fn add_constraint<G, U, S>(
         &mut self,
         constraint: G,
         user_data: U,
         tolerance: f64,
         is_equality: bool,
-    ) -> OptResult {
+    ) -> OptResult
+    where
+        G: ObjFn<U, S>,
+        S: Termination,
+    {
         let constraint = ConstraintCfg {
+            obj: self.nloptc_obj.0,
             objective_fn: constraint,
             user_data,
         };
@@ -451,14 +533,14 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
             if is_equality {
                 sys::nlopt_add_equality_constraint(
                     self.nloptc_obj.0,
-                    Some(constraint_raw_callback::<G, U>),
+                    Some(constraint_raw_callback::<G, U, S>),
                     ptr,
                     tolerance,
                 )
             } else {
                 sys::nlopt_add_inequality_constraint(
                     self.nloptc_obj.0,
-                    Some(constraint_raw_callback::<G, U>),
+                    Some(constraint_raw_callback::<G, U, S>),
                     ptr,
                     tolerance,
                 )
@@ -706,13 +788,19 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// The dimension `n` of `local_opt` must match that of the main optimization.
     ///
     /// A stubbed version of `local_opt` can be obtained with `get_local_optimizer`.
-    pub fn set_local_optimizer(&mut self, local_opt: Nlopt<impl ObjFn<()>, ()>) -> OptResult {
+    pub fn set_local_optimizer(
+        &mut self,
+        local_opt: Nlopt<impl ObjFn<(), f64>, (), f64>,
+    ) -> OptResult {
         result_from_outcome(unsafe {
             sys::nlopt_set_local_optimizer(self.nloptc_obj.0, local_opt.nloptc_obj.0)
         })
     }
 
-    pub fn get_local_optimizer(&mut self, algorithm: Algorithm) -> Nlopt<impl ObjFn<()>, ()> {
+    pub fn get_local_optimizer(
+        &mut self,
+        algorithm: Algorithm,
+    ) -> Nlopt<impl ObjFn<(), f64>, (), f64> {
         fn stub_opt(_: &[f64], _: Option<&mut [f64]>, _: &mut ()) -> f64 {
             unreachable!()
         }
