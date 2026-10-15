@@ -828,6 +828,9 @@ impl<F: ObjFn<T>, T> Nlopt<F, T> {
     /// contains the optimized values
     /// of the parameters, and the function returns the corresponding value of the objective function.
     pub fn optimize(&self, x_init: &mut [f64]) -> Result<(SuccessState, f64), (FailState, f64)> {
+        if x_init.len() < self.n_dims {
+            return Err((FailState::InvalidArgs, 0.0));
+        }
         let mut min_value: f64 = 0.0;
         let res =
             unsafe { sys::nlopt_optimize(self.nloptc_obj.0, x_init.as_mut_ptr(), &mut min_value) };
@@ -890,7 +893,7 @@ mod tests {
         let userdata = (1.0, vec![-2., 3.]);
         let mut opt = Nlopt::<_, (f64, Vec<f64>)>::new(
             Algorithm::Bobyqa,
-            2,
+            1,
             objfn,
             Target::Minimize,
             userdata,
